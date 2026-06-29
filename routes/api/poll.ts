@@ -16,6 +16,9 @@ const postPollSchema = z.object({
     password: z.string(),
     user_agent: z.string().max(100),
     reply_to: z.string().max(200).optional(),
+    // The PDS endpoint to log into. Optional: if omitted, it is resolved
+    // server-side from the handle so login works for any atproto account.
+    service: z.string().url().max(200).optional(),
 });
 
 export const handler = async (req: Request, _ctx: HandlerContext): Promise<Response> => {
@@ -34,11 +37,21 @@ export const handler = async (req: Request, _ctx: HandlerContext): Promise<Respo
             "error": pollParse.error.format()
         }), { status: 400 });
     }
-    const { question, answers, handle, password, user_agent: userAgent, reply_to: replyTo, service } = pollParse.data;
+    const { question, answers, handle, password, user_agent: userAgent, reply_to: replyTo } = pollParse.data;
     const enumeration = "number";
     const visibleId = generateId(6);
     const results = answers.map(() => 0).concat([0]);
     const createdAt = (new Date()).toISOString();
+    // Prefer a client-supplied PDS, but resolve it from the handle when absent
+    // (or when the client could not). Falls back to bsky.social as a last resort.
+    let service = pollParse.data.service;
+    if (!service) {
+        try {
+            service = await getPds(handle);
+        } catch (e) {
+            log.error(e);
+        }
+    }
     const agent = new Agent({ service: service || "https://bsky.social" });
     try {
         await agent.login({
