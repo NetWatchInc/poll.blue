@@ -1,15 +1,23 @@
 import { useEffect, useRef, useState } from "preact/hooks";
-import { postUriToBskyLink, generateId, generatePollText } from "../app/poll-utils.ts";
+import { generateId, generatePollText, postUriToBskyLink } from "../app/poll-utils.ts";
 import { getPds } from "../app/identity_utils.ts";
-import type { BrowserOAuthClient } from "@atproto/oauth-client-browser";
-import type { Agent } from "@atproto/api";
+import type { OAuthUserAgent } from "@atcute/oauth-browser-client";
 
 const HANDLE_RESOLVER = "https://bsky.social";
+const SCOPE = "atproto transition:generic";
 
 interface Session {
   did: string;
   handle: string;
 }
+
+// The atcute module functions we need after configuring OAuth once.
+// deno-lint-ignore no-explicit-any
+type OAuthMod = any;
+// deno-lint-ignore no-explicit-any
+type ClientMod = any;
+// deno-lint-ignore no-explicit-any
+type Resolver = any;
 
 export default function PostPoll() {
   // Poll content (shared by both posting paths).
@@ -19,8 +27,10 @@ export default function PostPoll() {
   const [showAdvanced, setShowAdvanced] = useState(false);
 
   // OAuth state.
-  const clientRef = useRef<BrowserOAuthClient | null>(null);
-  const agentRef = useRef<Agent | null>(null);
+  const oauthRef = useRef<OAuthMod | null>(null);
+  const clientModRef = useRef<ClientMod | null>(null);
+  const resolverRef = useRef<Resolver | null>(null);
+  const agentRef = useRef<OAuthUserAgent | null>(null);
   const [session, setSession] = useState<Session | null>(null);
   const [initializing, setInitializing] = useState(true);
   const [handle, setHandle] = useState("");
@@ -34,32 +44,67 @@ export default function PostPoll() {
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
 
-  // Initialize the OAuth client once, on the client only. Loaded dynamically so
+  // Configure OAuth once, on the client only. atcute is loaded dynamically so
   // the browser-only library never runs during server-side rendering.
   useEffect(() => {
     let cancelled = false;
     (async () => {
       try {
-        const { BrowserOAuthClient } = await import("@atproto/oauth-client-browser");
-        const { Agent } = await import("@atproto/api");
-        const isLocalhost = ["localhost", "127.0.0.1"].includes(location.hostname);
-        const client = isLocalhost
-          ? new BrowserOAuthClient({
-            handleResolver: HANDLE_RESOLVER,
-            clientMetadata: undefined,
-          })
-          : await BrowserOAuthClient.load({
-            clientId: `https://${location.host}/client-metadata.json`,
-            handleResolver: HANDLE_RESOLVER,
-          });
+        // Loopback OAuth clients must use the 127.0.0.1 IP, not the localhost
+        // hostname, and the session store is per-origin — so do everything on
+        // 127.0.0.1.
+        if (location.hostname === "localhost") {
+          location.replace(location.href.replace("localhost", "127.0.0.1"));
+          return;
+        }
+
+        const oauth = await import("@atcute/oauth-browser-client");
+        const clientMod = await import("@atcute/client");
+        const idr = await import("@atcute/identity-resolver");
         if (cancelled) return;
-        clientRef.current = client;
-        const result = await client.init();
-        if (cancelled) return;
-        if (result?.session) {
-          const agent = new Agent(result.session);
-          agentRef.current = agent;
-          await setSignedIn(agent, result.session.sub);
+
+        const identityResolver = new idr.LocalActorResolver({
+          handleResolver: new idr.XrpcHandleResolver({ serviceUrl: HANDLE_RESOLVER }),
+          didDocumentResolver: new idr.CompositeDidDocumentResolver({
+            methods: {
+              plc: new idr.PlcDidDocumentResolver(),
+              web: new idr.WebDidDocumentResolver(),
+            },
+          }),
+        });
+
+        const isDev = location.hostname === "127.0.0.1";
+        const redirectUri = `${location.origin}/`;
+        // Production: client_id is the hosted metadata URL. Dev: the atproto
+        // "loopback" client, with redirect_uri + scope encoded into client_id.
+        const clientId = isDev
+          ? `http://localhost?redirect_uri=${encodeURIComponent(redirectUri)}&scope=${encodeURIComponent(SCOPE)}`
+          : `https://${location.host}/client-metadata.json`;
+
+        oauth.configureOAuth({
+          metadata: { client_id: clientId, redirect_uri: redirectUri },
+          identityResolver,
+        });
+
+        oauthRef.current = oauth;
+        clientModRef.current = clientMod;
+        resolverRef.current = identityResolver;
+
+        // Complete an in-progress sign-in (OAuth redirect back to us), else
+        // restore a previously stored session.
+        const params = new URLSearchParams(location.search);
+        if (params.has("code") || params.has("error") || params.has("state")) {
+          history.replaceState(null, "", location.pathname);
+          const { session: s } = await oauth.finalizeAuthorization(params);
+          if (cancelled) return;
+          await adoptSession(new oauth.OAuthUserAgent(s));
+        } else {
+          const dids = oauth.listStoredSessions();
+          if (dids.length > 0) {
+            const s = await oauth.getSession(dids[0], { allowStale: true });
+            if (cancelled) return;
+            await adoptSession(new oauth.OAuthUserAgent(s));
+          }
         }
       } catch (e) {
         if (!cancelled) setError("could not start OAuth: " + (e as Error).message);
@@ -72,11 +117,13 @@ export default function PostPoll() {
     };
   }, []);
 
-  async function setSignedIn(agent: Agent, did: string) {
+  async function adoptSession(agent: OAuthUserAgent) {
+    agentRef.current = agent;
+    const did = agent.sub as string;
     let resolvedHandle = did;
     try {
-      const prof = await agent.getProfile({ actor: did });
-      resolvedHandle = prof.data.handle ?? did;
+      const resolved = await resolverRef.current.resolve(did);
+      resolvedHandle = resolved.handle ?? did;
     } catch {
       // Non-critical: fall back to showing the DID.
     }
@@ -91,8 +138,15 @@ export default function PostPoll() {
       return;
     }
     try {
-      // Redirects away; the returned promise only settles on failure.
-      await clientRef.current?.signIn(input);
+      const url = await oauthRef.current.createAuthorizationUrl({
+        // identifier is a branded handle/DID type; our input is fine at runtime.
+        // deno-lint-ignore no-explicit-any
+        target: { type: "account", identifier: input as any },
+        scope: SCOPE,
+      });
+      // Let atcute persist the PKCE/state to storage before we navigate away.
+      await new Promise((r) => setTimeout(r, 250));
+      location.assign(url.toString());
     } catch (e) {
       setError("sign in failed: " + (e as Error).message);
     }
@@ -100,8 +154,7 @@ export default function PostPoll() {
 
   async function signOut() {
     try {
-      // deno-lint-ignore no-explicit-any
-      await (clientRef.current as any)?.revoke?.(session?.did);
+      await agentRef.current?.signOut();
     } catch {
       // ignore
     }
@@ -109,9 +162,18 @@ export default function PostPoll() {
     setSession(null);
   }
 
-  // Resolve a reply-to link (bsky.app URL or at:// URI) to a post ref, using
-  // the signed-in agent. Mirrors Bot.linkToReplyRef in app/bot.ts.
-  async function resolveReply(agent: Agent, link: string) {
+  // A new XRPC client bound to the signed-in user's PDS. Cast to a loose type:
+  // we call by NSID string and use custom poll facets, so the strict lexicon
+  // types aren't worth pulling in here.
+  // deno-lint-ignore no-explicit-any
+  function rpc(): any {
+    return new clientModRef.current.Client({ handler: agentRef.current });
+  }
+
+  // Resolve a reply-to link (bsky.app URL or at:// URI) to a post ref via the
+  // signed-in agent. Mirrors Bot.linkToReplyRef in app/bot.ts.
+  // deno-lint-ignore no-explicit-any
+  async function resolveReply(api: any, link: string) {
     let did: string | undefined;
     let rkey: string | undefined;
     if (link.startsWith("at://")) {
@@ -121,20 +183,19 @@ export default function PostPoll() {
     } else {
       const m = /https:\/\/(?:staging\.)?bsky\.app\/profile\/([^/]+)\/post\/([^/]+)/.exec(link);
       if (m) {
-        const r = await agent.com.atproto.identity.resolveHandle({ handle: m[1] });
+        const r = await api.get("com.atproto.identity.resolveHandle", { params: { handle: m[1] } });
+        if (!r.ok) return undefined;
         did = r.data.did;
         rkey = m[2];
       }
     }
     if (!did || !rkey) return undefined;
-    const rec = await agent.com.atproto.repo.getRecord({
-      repo: did,
-      collection: "app.bsky.feed.post",
-      rkey,
+    const rec = await api.get("com.atproto.repo.getRecord", {
+      params: { repo: did, collection: "app.bsky.feed.post", rkey },
     });
-    const post = { uri: rec.data.uri, cid: rec.data.cid! };
-    // deno-lint-ignore no-explicit-any
-    const root = (rec.data.value as any)?.reply?.root ?? post;
+    if (!rec.ok) return undefined;
+    const post = { uri: rec.data.uri, cid: rec.data.cid };
+    const root = rec.data.value?.reply?.root ?? post;
     return { root, parent: post };
   }
 
@@ -160,18 +221,24 @@ export default function PostPoll() {
         pollStyle: "plain",
       });
       const createdAt = new Date().toISOString();
-      const reply = replyTo ? await resolveReply(agent, replyTo) : undefined;
-      const created = await agent.com.atproto.repo.createRecord({
-        repo: agent.assertDid,
-        collection: "app.bsky.feed.post",
-        record: {
-          $type: "app.bsky.feed.post",
-          text,
-          facets: [...links, ...pollFacets],
-          reply,
-          createdAt,
+      const api = rpc();
+      const reply = replyTo ? await resolveReply(api, replyTo) : undefined;
+      const created = await api.post("com.atproto.repo.createRecord", {
+        input: {
+          repo: agent.sub,
+          collection: "app.bsky.feed.post",
+          record: {
+            $type: "app.bsky.feed.post",
+            text,
+            facets: [...links, ...pollFacets],
+            reply,
+            createdAt,
+          },
         },
       });
+      if (!created.ok) {
+        throw new Error(created.data?.error ?? "failed to create post");
+      }
       const resp = await fetch("/api/poll/register", {
         method: "POST",
         headers: { "Content-Type": "application/json" },

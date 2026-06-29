@@ -1,5 +1,5 @@
 {
-  "comment": "Reproducible builds (for now): deno.lock pins every dependency by content hash; that is the real guarantee. esm.sh is not content-stable on bare URLs (this is what broke the deploy build), so where esm.sh honors it we also request the immutable /v135/ build prefix (the *-external preact-render-to-string and twind). esm.sh normalizes preact and @atproto/* back to canonical URLs, so for those the deno.lock hash is the effective pin. @preact/signals* are left as-is: nothing imports them (not in the dependency graph) and esm.sh rejects pinning the scoped-external (*@scope) form. A proper fix (pin/vendor everything) is deferred to the planned refactor.",
+  "comment": "Reproducible builds (for now): deno.lock pins every dependency by content hash; that is the real guarantee. esm.sh is not content-stable on bare URLs (this is what broke the deploy build), so where esm.sh honors it we also request the immutable /v135/ build prefix (the *-external preact-render-to-string and twind). esm.sh normalizes preact, @atproto/* and @atcute/* back to canonical URLs, so for those the deno.lock hash is the effective pin. @preact/signals* are left as-is: nothing imports them (not in the dependency graph) and esm.sh rejects pinning the scoped-external (*@scope) form. Client-side OAuth uses atcute (lightweight, ESM-native); the official @atproto/oauth-client-browser would not load in the Fresh island. A proper fix (pin/vendor everything) is deferred to the planned refactor.",
   "imports": {
     "$fresh/": "https://deno.land/x/fresh@1.1.5/",
     "@preact/signals-core": "https://esm.sh/*@preact/signals-core@1.2.3",
@@ -9,8 +9,9 @@
     "preact/": "https://esm.sh/preact@10.13.1/",
     "twind": "https://esm.sh/v135/twind@0.16.19",
     "twind/": "https://esm.sh/v135/twind@0.16.19/",
-    "@atproto/oauth-client-browser": "https://esm.sh/@atproto/oauth-client-browser@0.4.3",
-    "@atproto/api": "https://esm.sh/@atproto/api@0.20.22"
+    "@atcute/client": "https://esm.sh/@atcute/client@5.1.0",
+    "@atcute/oauth-browser-client": "https://esm.sh/@atcute/oauth-browser-client@4.0.0",
+    "@atcute/identity-resolver": "https://esm.sh/@atcute/identity-resolver@2.0.0"
   },
   "scopes": {}
 }
