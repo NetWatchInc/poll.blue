@@ -39,9 +39,10 @@ export default function Home() {
           </a>.
         </p>
         <p class="my-2 text-white">
-          Post a poll directly from your account here! You'll need to put in
-          your account credentials down below. Make sure to use an app password
-          (Settings → App passwords) and not your main password.
+          Post a poll directly from your account here! Sign in with Bluesky
+          (OAuth) below — poll.blue never sees your password. If your PDS
+          doesn't support OAuth yet, there's an app-password fallback under
+          Advanced options.
         </p>
         <PostPoll />
       </div>

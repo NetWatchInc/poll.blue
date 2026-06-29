@@ -6,12 +6,14 @@ import config from "./deno.json" assert { type: "json" };
 import * as $0 from "./routes/.well-known/did.json.ts";
 import * as $1 from "./routes/api/poll.ts";
 import * as $2 from "./routes/api/poll/[poll].ts";
-import * as $3 from "./routes/index.tsx";
-import * as $4 from "./routes/p/[poll].tsx";
-import * as $5 from "./routes/p/[poll]/[vote].tsx";
-import * as $6 from "./routes/post.tsx";
-import * as $7 from "./routes/status.ts";
-import * as $8 from "./routes/xrpc/app/bsky/feed/getFeedSkeleton.ts";
+import * as $3 from "./routes/api/poll/register.ts";
+import * as $4 from "./routes/client-metadata.json.ts";
+import * as $5 from "./routes/index.tsx";
+import * as $6 from "./routes/p/[poll].tsx";
+import * as $7 from "./routes/p/[poll]/[vote].tsx";
+import * as $8 from "./routes/post.tsx";
+import * as $9 from "./routes/status.ts";
+import * as $10 from "./routes/xrpc/app/bsky/feed/getFeedSkeleton.ts";
 import * as $$0 from "./islands/post.tsx";
 
 const manifest = {
@@ -19,12 +21,14 @@ const manifest = {
     "./routes/.well-known/did.json.ts": $0,
     "./routes/api/poll.ts": $1,
     "./routes/api/poll/[poll].ts": $2,
-    "./routes/index.tsx": $3,
-    "./routes/p/[poll].tsx": $4,
-    "./routes/p/[poll]/[vote].tsx": $5,
-    "./routes/post.tsx": $6,
-    "./routes/status.ts": $7,
-    "./routes/xrpc/app/bsky/feed/getFeedSkeleton.ts": $8,
+    "./routes/api/poll/register.ts": $3,
+    "./routes/client-metadata.json.ts": $4,
+    "./routes/index.tsx": $5,
+    "./routes/p/[poll].tsx": $6,
+    "./routes/p/[poll]/[vote].tsx": $7,
+    "./routes/post.tsx": $8,
+    "./routes/status.ts": $9,
+    "./routes/xrpc/app/bsky/feed/getFeedSkeleton.ts": $10,
   },
   islands: {
     "./islands/post.tsx": $$0,
