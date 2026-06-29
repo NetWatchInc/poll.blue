@@ -5,7 +5,7 @@ const steps = [
   {
     n: "01",
     title: "Sign in with Bluesky",
-    body: "Authorize with OAuth — your password never touches our servers. We only ever act on your behalf to post the poll.",
+    body: "Log in. Post poll. Boom. Live as a Bluesky post, instantly.",
   },
   {
     n: "02",
@@ -20,9 +20,8 @@ const steps = [
 ];
 
 const demoOptions = [
-  { label: "Tabs", pct: 46 },
-  { label: "Spaces", pct: 31 },
-  { label: "I use both, I'm a monster", pct: 23 },
+  { label: "Red Button", pct: 46 },
+  { label: "Blue Button", pct: 31 },
 ];
 ---
 
@@ -32,7 +31,7 @@ const demoOptions = [
     <div>
       <p class="pill rise" style="animation-delay: 40ms">
         <span class="inline-block h-1.5 w-1.5 rounded-full" style="background: var(--color-brand)"></span>
-        Polls, native to the AT Protocol
+        Polls, for Bluesky.
       </p>
       <h1 class="rise mt-6 text-5xl leading-[0.98] sm:text-6xl md:text-[4.25rem]" style="animation-delay: 90ms">
         Ask Bluesky<br />
@@ -40,7 +39,6 @@ const demoOptions = [
       </h1>
       <p class="rise mt-6 max-w-md text-lg leading-relaxed text-[var(--color-ink-soft)]" style="animation-delay: 150ms">
         Spin up a poll in seconds and post it straight from your own account.
-        OAuth sign-in, no passwords, no middleman — just you and your followers.
       </p>
       <div class="rise mt-8 flex flex-wrap items-center gap-3" style="animation-delay: 210ms">
         <a href="/create" class="btn btn-primary text-base">
@@ -64,11 +62,11 @@ const demoOptions = [
         <div class="flex items-center gap-3">
           <div class="h-10 w-10 rounded-full" style="background: linear-gradient(135deg, #1185fe, #073a86)"></div>
           <div class="leading-tight">
-            <p class="font-semibold">you.bsky.social</p>
+            <p class="font-semibold">shreyanjain.net</p>
             <p class="text-sm text-[var(--color-ink-faint)]">via poll.blue</p>
           </div>
         </div>
-        <p class="mt-4 text-lg font-semibold">Tabs or spaces? Settle it.</p>
+        <p class="mt-4 text-lg font-semibold">Would you press the red button or the blue button?</p>
 
         <div class="mt-4 space-y-2.5">
           {demoOptions.map((o, i) => (
@@ -94,7 +92,7 @@ const demoOptions = [
   <section id="how" class="mx-auto max-w-5xl px-6 py-16">
     <h2 class="text-3xl sm:text-4xl">Three taps to a live poll.</h2>
     <p class="mt-3 max-w-xl text-[var(--color-ink-soft)]">
-      poll.blue is built directly on the AT Protocol. The poll lives on <em>your</em> account — we just make it pretty and count the votes.
+      Your poll lives in a Bluesky post. poll.blue keeps track of the votes in its own central database, and prints them prettily for you! 
     </p>
 
     <div class="mt-10 grid gap-5 sm:grid-cols-3">
@@ -109,7 +107,7 @@ const demoOptions = [
 
     <div class="card mt-10 flex flex-col items-center gap-5 p-10 text-center sm:p-14">
       <h2 class="max-w-xl text-3xl sm:text-4xl">Ready when you are.</h2>
-      <p class="max-w-md text-[var(--color-ink-soft)]">No sign-up, no app password. Just authorize with Bluesky and post.</p>
+      <p class="max-w-md text-[var(--color-ink-soft)]">C'mon, press the button. I know you want to. Post some cursed question. Please.</p>
       <a href="/create" class="btn btn-primary text-base">Create your first poll</a>
     </div>
   </section>
