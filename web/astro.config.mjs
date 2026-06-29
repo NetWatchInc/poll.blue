@@ -24,9 +24,6 @@ export default defineConfig({
         "/xrpc": BACKEND,
         "/.well-known": BACKEND,
         "/status": BACKEND,
-        // Vote links /p/{id}/{n} (two segments) → backend records the vote.
-        // /p/{id} (one segment, results) is handled by src/middleware.ts.
-        "^/p/[^/]+/[^/]+/?$": BACKEND,
       },
     },
   },

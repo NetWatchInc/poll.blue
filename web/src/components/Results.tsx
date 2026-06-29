@@ -14,9 +14,11 @@ const EMOJI = ["1️⃣", "2️⃣", "3️⃣", "4️⃣"];
 
 function readParams() {
   const url = new URL(location.href);
-  const id = url.searchParams.get("id") ?? (location.pathname.match(/^\/p\/([^/]+)/)?.[1] ?? "");
-  const voted = Number(url.searchParams.get("v") ?? "0");
-  return { id, voted };
+  // /p/{id} (results) or /p/{id}/{n} (vote for option n). ?id= supported in dev.
+  const m = location.pathname.match(/^\/p\/([^/]+)(?:\/(\d+))?/);
+  const id = m?.[1] ?? url.searchParams.get("id") ?? "";
+  const voteIntent = m?.[2] ? Number(m[2]) : Number(url.searchParams.get("v") ?? "0");
+  return { id, voteIntent };
 }
 
 export default function Results() {
@@ -25,11 +27,20 @@ export default function Results() {
   const [voted, setVoted] = useState(0);
 
   useEffect(() => {
-    const { id, voted } = readParams();
-    setVoted(voted);
+    const { id, voteIntent } = readParams();
+    setVoted(voteIntent);
     if (!id) return setState("notfound");
     (async () => {
       try {
+        // Cast the vote (only real browsers run this — bots that fetch the link
+        // never do). The server applies cookie/IP dedup.
+        if (voteIntent > 0) {
+          await fetch(`/api/poll/${encodeURIComponent(id)}/vote`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ vote: voteIntent }),
+          }).catch(() => {});
+        }
         const resp = await fetch(`/api/poll/${encodeURIComponent(id)}`);
         if (resp.status === 404) return setState("notfound");
         if (!resp.ok) return setState("error");

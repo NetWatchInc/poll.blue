@@ -1,11 +1,11 @@
 import { defineMiddleware } from "astro:middleware";
 
-// Dev-only routing parity with the production nginx config (static builds have
-// no runtime, so this only runs under `astro dev`):
-//   /p/{id}      (one segment)  → serve the results page (island reads the id)
-//   /p/{id}/{n}  (two segments) → proxied to the backend by Vite (vote)
+// Dev-only routing parity with production (static builds have no runtime, so
+// this only runs under `astro dev`): /p/{id} and /p/{id}/{n} both serve the
+// results page, which reads the id (and vote intent) from the URL and POSTs the
+// vote to the backend.
 export const onRequest = defineMiddleware((context, next) => {
-  if (/^\/p\/[^/]+\/?$/.test(context.url.pathname)) {
+  if (/^\/p\/[^/]+(\/\d+)?\/?$/.test(context.url.pathname)) {
     return context.rewrite("/results");
   }
   return next();

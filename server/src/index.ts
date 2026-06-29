@@ -30,14 +30,17 @@ app.get("/xrpc/app.bsky.feed.getFeedSkeleton", (c) => c.json({ feed: [] }));
 
 app.post("/api/poll/register", register);
 app.get("/api/poll/:id", getResults);
-
-// Vote link posted to Bluesky: /p/{id}/{n} records the vote, then redirects.
-app.get("/p/:id/:vote", vote);
+// Voting is a same-origin JS POST (so firehose/crawler GETs on the link can't
+// vote). The option links themselves serve the results page below.
+app.post("/api/poll/:id/vote", vote);
 
 // --- static frontend --------------------------------------------------------
 app.get("/", file("index.html"));
 app.get("/create", file("create/index.html"));
-app.get("/p/:id", file("results/index.html")); // results page (reads id from URL)
+// Both the posted option links (/p/{id}/{n}) and the results page (/p/{id})
+// serve the results page; its JS casts the vote (for /p/{id}/{n}) via POST.
+app.get("/p/:id/:vote", file("results/index.html"));
+app.get("/p/:id", file("results/index.html"));
 
 app.use("/*", serveStatic({ root: WEB_DIST })); // assets, client-metadata.json, favicon
 app.get("*", file("index.html")); // SPA fallback
