@@ -13,9 +13,15 @@ export async function startBot(): Promise<void> {
     console.log("Bot disabled (no Bluesky credentials) — like/repost and result posting are off.");
     return;
   }
-  agent = new AtpAgent({ service: config.BSKY_HOST });
-  await agent.login({ identifier: config.BSKY_USERNAME, password: config.BSKY_PASSWORD });
-  console.log(`Bot logged in as @${agent.session?.handle}`);
+  try {
+    agent = new AtpAgent({ service: config.BSKY_HOST });
+    await agent.login({ identifier: config.BSKY_USERNAME, password: config.BSKY_PASSWORD });
+    console.log(`Bot logged in as @${agent.session?.handle}`);
+  } catch (e) {
+    console.error("Bot failed to log in — continuing without it:", e);
+    agent = undefined;
+    return;
+  }
   const tick = async () => {
     try {
       await postResults();

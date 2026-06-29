@@ -1,7 +1,7 @@
 import { serve } from "@hono/node-server";
 import { serveStatic } from "@hono/node-server/serve-static";
 import { Hono } from "hono";
-import { config } from "./config.ts";
+import { config, dbDescription } from "./config.ts";
 import { pool } from "./db.ts";
 import { register } from "./routes/register.ts";
 import { getResults } from "./routes/results.ts";
@@ -45,12 +45,10 @@ app.get("*", file("index.html")); // SPA fallback
 // --- start ------------------------------------------------------------------
 try {
   await pool.query("SELECT 1");
-  console.log(`DB connected (${config.PG_HOST}:${config.PG_PORT}, ssl=${config.PG_SSL}).`);
+  console.log(`DB connected (${dbDescription}).`);
 } catch (e) {
-  console.error(
-    `DB connection FAILED (${config.PG_HOST}:${config.PG_PORT}, ssl=${config.PG_SSL}): ${(e as Error).message}`,
-  );
-  console.error("→ Fix server/.env (PG_HOST/PG_PORT/PG_SSL/credentials). Poll registration & voting need the DB.");
+  console.error(`DB connection FAILED (${dbDescription}): ${(e as Error).message}`);
+  console.error("→ Check DATABASE_URL or PG_* env vars. Poll registration & voting need the DB.");
 }
 
 await startBot();
