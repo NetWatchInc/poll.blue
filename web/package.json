@@ -1,0 +1,27 @@
+{
+  "name": "poll-blue-web",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "dev": "astro dev",
+    "build": "astro build",
+    "preview": "astro preview",
+    "check": "astro check"
+  },
+  "dependencies": {
+    "@astrojs/preact": "^4.1.0",
+    "@atcute/client": "^5.1.0",
+    "@atcute/identity-resolver": "^2.0.0",
+    "@atcute/oauth-browser-client": "^4.0.0",
+    "@nanostores/preact": "^1.1.0",
+    "astro": "^5.13.0",
+    "nanostores": "^1.4.0",
+    "preact": "^10.26.0"
+  },
+  "devDependencies": {
+    "@astrojs/check": "^0.9.9",
+    "@tailwindcss/vite": "^4.1.0",
+    "tailwindcss": "^4.1.0",
+    "typescript": "^5.7.0"
+  }
+}

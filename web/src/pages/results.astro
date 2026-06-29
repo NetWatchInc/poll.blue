@@ -1,0 +1,15 @@
+---
+import Base from "../layouts/Base.astro";
+import Results from "../components/Results.tsx";
+// Served by nginx for /p/{id} in production (single-segment). The island reads
+// the poll id from the URL. In dev, visit /results?id={id}.
+---
+
+<Base title="Poll results — poll.blue">
+  <section class="mx-auto max-w-2xl px-6 pt-10 pb-20">
+    <Results client:only="preact" />
+    <p class="mt-6 text-center text-sm text-[var(--color-ink-faint)]">
+      <a class="font-semibold text-[var(--color-brand-deep)] hover:underline" href="/create">Make your own poll →</a>
+    </p>
+  </section>
+</Base>

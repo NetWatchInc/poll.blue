@@ -1,35 +1,43 @@
 # poll.blue
 
-poll.blue is a polling app for Bluesky. Posting instructions available on the
-landing page: [https://poll.blue](https://poll.blue).
+Polls for Bluesky, built on the AT Protocol.
 
-## Running locally
+- **`web/`** — Astro + Preact + Tailwind frontend: landing page, create-poll page
+  with atcute Bluesky **OAuth** (your password never reaches the server), and a
+  results page.
+- **`server/`** — Node + Hono backend: the API (`/api/poll/register`,
+  `/api/poll/:id`), vote recording (`/p/:id/:n`), and the `@`-mention bot. It
+  also serves the built frontend, so production is a single app on one port.
 
-You will need to install deno and postgres to run locally. Create the necessary
-tables by running
+## Local development
 
-```
-deno task nessie:local migrate
-```
+Requires **Node 20+** and a Postgres database.
 
-Then start the server:
+```bash
+# 1) Backend  →  http://127.0.0.1:8000
+cd server
+cp -n .env.example .env      # -n: don't clobber an existing .env; then fill in PG_*
+npm install
+npm run dev
 
-```
-deno task start
-```
-
-This will watch the project directory and restart as necessary.
-
-## Tests
-
-There are a few unit tests, which you can run using:
-
-```
-deno test
+# 2) Frontend →  http://127.0.0.1:4321  (proxies /api etc. to the backend)
+cd web
+npm install
+npm run dev
 ```
 
-There are also integration tests which run on CI.
+Open **http://127.0.0.1:4321**. (OAuth's loopback flow requires the `127.0.0.1`
+IP, not `localhost`.)
 
-```
-INTEGRATION_TESTS=true deno test -A --unstable
-```
+The database schema is in [`server/schema.sql`](server/schema.sql). For a managed
+DB (e.g. DigitalOcean) set `PG_SSL=require` and `PG_PORT` in `server/.env`.
+
+## Production
+
+A single Docker image (`Dockerfile`) builds `web/` and runs the server, which
+serves the static frontend **and** the API on one port. The platform provides
+`PORT` and the `PG_*` / `BSKY_*` environment variables.
+
+For a managed database, remember to set **`PG_SSL=require`** and **`PG_PORT`**
+(e.g. `25060`) in the platform's env vars — otherwise the defaults assume a plain
+local Postgres on `5432`.

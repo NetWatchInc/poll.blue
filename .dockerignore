@@ -1,0 +1,10 @@
+.git
+**/node_modules
+web/dist
+web/.astro
+server/dist
+**/.env
+**/.env.local
+.prod.env
+*.log
+.DS_Store
