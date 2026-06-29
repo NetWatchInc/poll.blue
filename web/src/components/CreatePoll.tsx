@@ -157,7 +157,7 @@ export default function CreatePoll() {
           <input
             class="field flex-1"
             type="text"
-            placeholder="you.bsky.social"
+            placeholder="oakley.bsky.social"
             value={signInHandle}
             autocomplete="username"
             onInput={(e) => setSignInHandle((e.target as HTMLInputElement).value)}
