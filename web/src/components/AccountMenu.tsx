@@ -91,7 +91,7 @@ export default function AccountMenu() {
             <input
               class="field"
               type="text"
-              placeholder="you.bsky.social"
+              placeholder="oakley.bsky.social"
               value={handle}
               autocomplete="username"
               onInput={(e) => setHandle((e.target as HTMLInputElement).value)}
@@ -100,7 +100,7 @@ export default function AccountMenu() {
             <button class="btn btn-primary mt-2 w-full text-sm" disabled={busy || !handle.trim()} onClick={doSignIn}>
               {busy ? "Redirecting…" : "Continue"}
             </button>
-            <p class="mt-2 text-xs text-[var(--color-ink-faint)]">OAuth — your password never reaches poll.blue.</p>
+            <p class="mt-2 text-xs text-[var(--color-ink-faint)]">Into the Atmosphere!!</p>
             {error && <p class="mt-2 text-xs font-medium text-red-600">{error}</p>}
           </div>
         )}
@@ -127,7 +127,7 @@ export default function AccountMenu() {
             Create a poll
           </a>
           <a class="block rounded-xl px-3 py-2 text-sm font-medium transition-colors hover:bg-[var(--color-paper-2)]" href={`https://bsky.app/profile/${account.handle}`} target="_blank" rel="noreferrer">
-            View profile ↗
+            View profile on Bluesky ↗
           </a>
           <button class="block w-full rounded-xl px-3 py-2 text-left text-sm font-medium text-red-600 transition-colors hover:bg-red-50" onClick={() => { setMenuOpen(false); signOut(); }}>
             Sign out

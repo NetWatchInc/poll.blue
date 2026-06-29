@@ -149,9 +149,9 @@ export default function CreatePoll() {
     return (
       <div class="card rise p-8 sm:p-10">
         <span class="pill">Sign in to continue</span>
-        <h2 class="mt-4 text-3xl">Sign in with Bluesky</h2>
+        <h2 class="mt-4 text-3xl">Sign in through the Atmosphere</h2>
         <p class="mt-2 max-w-md text-[var(--color-ink-soft)]">
-          OAuth — your password never touches poll.blue. You can also use the menu in the top-right corner.
+          No need to create another account - simply log in using your Bluesky handle.
         </p>
         <div class="mt-6 flex flex-col gap-3 sm:flex-row">
           <input
@@ -183,7 +183,7 @@ export default function CreatePoll() {
           class="field mt-2"
           type="text"
           maxLength={200}
-          placeholder="What should we build next?"
+          placeholder="Red Button or Blue Button?"
           value={question}
           onInput={(e) => setQuestion((e.target as HTMLInputElement).value)}
         />
