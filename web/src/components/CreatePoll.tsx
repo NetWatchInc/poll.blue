@@ -295,6 +295,36 @@ export default function CreatePoll() {
           )}
         </div>
 
+        {/* Poll block — edited in place, rendered like the final post */}
+        <div class="mt-4 rounded-2xl border p-3.5" style="border-color: var(--color-line); background: linear-gradient(180deg,#ffffff,#f5f9fe)">
+          <p class="mb-1.5 ml-2 text-[0.62rem] font-bold uppercase tracking-widest text-[var(--color-ink-faint)]">Poll</p>
+          <div class="space-y-0.5">
+            {options.map((opt, i) => (
+              <div class="group flex items-center gap-2.5 rounded-xl px-2 py-1.5 transition-colors hover:bg-[var(--color-paper-2)]">
+                <span class="select-none text-lg">{EMOJI[i]}</span>
+                <input
+                  class="min-w-0 flex-1 bg-transparent text-[0.98rem] font-medium outline-none placeholder:font-normal placeholder:text-[var(--color-ink-faint)]"
+                  type="text"
+                  maxLength={50}
+                  placeholder={`Option ${i + 1}`}
+                  value={opt}
+                  onInput={(e) => updateOption(i, (e.target as HTMLInputElement).value)}
+                />
+                {options.length > 2 && (
+                  <button type="button" onClick={() => removeOption(i)} aria-label={`Remove option ${i + 1}`}
+                    class="shrink-0 text-[var(--color-ink-faint)] opacity-0 transition-opacity hover:text-red-600 group-hover:opacity-100">✕</button>
+                )}
+              </div>
+            ))}
+          </div>
+          <div class="mt-1 flex items-center gap-4 pl-2">
+            {options.length < MAX_OPTIONS && (
+              <button type="button" class="text-sm font-semibold text-[var(--color-brand-deep)] hover:underline" onClick={addOption}>+ Add option</button>
+            )}
+          </div>
+          <p class="mt-2 ml-2 text-sm font-medium text-[var(--color-brand-deep)]">📊 Show results</p>
+        </div>
+
         <div class="mt-5 flex items-center gap-4">
           <button class="btn btn-primary" disabled={!canPost || busy} onClick={post}>{busy ? "Posting…" : "Post poll"}</button>
           <span class={`text-sm font-semibold ${over ? "text-red-600" : "text-[var(--color-ink-faint)]"}`}>{postLen}/{MAX_GRAPHEMES}</span>
@@ -307,25 +337,7 @@ export default function CreatePoll() {
       <div class="card p-6 sm:p-7">
         <span class="pill">Poll setup</span>
 
-        <p class="mt-5 text-sm font-semibold text-[var(--color-ink-soft)]">Options <span class="font-normal">(2–{MAX_OPTIONS})</span></p>
-        <div class="mt-2 space-y-2">
-          {options.map((opt, i) => (
-            <div class="flex items-center gap-2.5">
-              <span class="select-none text-lg">{EMOJI[i]}</span>
-              <input class="field" type="text" maxLength={50} placeholder={`Option ${i + 1}`} value={opt}
-                onInput={(e) => updateOption(i, (e.target as HTMLInputElement).value)} />
-              {options.length > 2 && (
-                <button type="button" onClick={() => removeOption(i)} aria-label={`Remove option ${i + 1}`}
-                  class="grid h-8 w-8 shrink-0 place-items-center rounded-full text-[var(--color-ink-faint)] transition-colors hover:bg-red-50 hover:text-red-600">✕</button>
-              )}
-            </div>
-          ))}
-        </div>
-        {options.length < MAX_OPTIONS && (
-          <button type="button" class="mt-2 text-sm font-semibold text-[var(--color-brand-deep)] hover:underline" onClick={addOption}>+ Add option</button>
-        )}
-
-        <p class="mt-6 text-sm font-semibold text-[var(--color-ink-soft)]">How votes are recorded</p>
+        <p class="mt-5 text-sm font-semibold text-[var(--color-ink-soft)]">How votes are recorded</p>
         <div class="mt-2 grid gap-2">
           {([
             { key: "network", title: "On the network", blurb: "A record on each voter's account — verifiable, one per account, gate-able." },
