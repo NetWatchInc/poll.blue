@@ -1,0 +1,16 @@
+---
+import Base from "../layouts/Base.astro";
+import MyPolls from "../components/MyPolls.tsx";
+---
+
+<Base title="My polls — poll.blue">
+  <section class="mx-auto max-w-2xl px-6 pt-8 pb-20">
+    <div class="mb-8">
+      <h1 class="text-4xl sm:text-5xl">My polls</h1>
+      <p class="mt-3 text-lg text-[var(--color-ink-soft)]">
+        Everything here is read straight from your repo on the network.
+      </p>
+    </div>
+    <MyPolls client:only="preact" />
+  </section>
+</Base>

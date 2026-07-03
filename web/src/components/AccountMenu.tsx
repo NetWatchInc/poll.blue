@@ -126,6 +126,9 @@ export default function AccountMenu() {
           <a class="block rounded-xl px-3 py-2 text-sm font-medium transition-colors hover:bg-[var(--color-paper-2)]" href="/create">
             Create a poll
           </a>
+          <a class="block rounded-xl px-3 py-2 text-sm font-medium transition-colors hover:bg-[var(--color-paper-2)]" href="/mine">
+            My polls
+          </a>
           <a class="block rounded-xl px-3 py-2 text-sm font-medium transition-colors hover:bg-[var(--color-paper-2)]" href={`https://bsky.app/profile/${account.handle}`} target="_blank" rel="noreferrer">
             View profile on Bluesky ↗
           </a>

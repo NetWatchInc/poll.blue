@@ -1,0 +1,50 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 240" fill="none">
+  <defs>
+    <linearGradient id="body" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#f2f8ff"/>
+      <stop offset="0.5" stop-color="#c2ddf6"/>
+      <stop offset="1" stop-color="#8fbce9"/>
+    </linearGradient>
+    <linearGradient id="lid" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#eaf4ff"/>
+      <stop offset="1" stop-color="#a9cbec"/>
+    </linearGradient>
+    <linearGradient id="paper" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffffff"/>
+      <stop offset="1" stop-color="#dceafc"/>
+    </linearGradient>
+    <radialGradient id="gloss" cx="0.35" cy="0.2" r="0.8">
+      <stop offset="0" stop-color="#ffffff" stop-opacity="0.75"/>
+      <stop offset="1" stop-color="#ffffff" stop-opacity="0"/>
+    </radialGradient>
+    <filter id="soft" x="-30%" y="-30%" width="160%" height="160%">
+      <feGaussianBlur stdDeviation="6"/>
+    </filter>
+  </defs>
+
+  <!-- ground shadow -->
+  <ellipse cx="120" cy="214" rx="84" ry="13" fill="#1e5090" opacity="0.28" filter="url(#soft)"/>
+
+  <!-- ballot paper peeking from the slot -->
+  <g>
+    <rect x="94" y="40" width="52" height="60" rx="5" fill="url(#paper)" stroke="#b9d2ee" stroke-width="1.5"/>
+    <line x1="103" y1="55" x2="137" y2="55" stroke="#c3d6ee" stroke-width="3" stroke-linecap="round"/>
+    <line x1="103" y1="65" x2="131" y2="65" stroke="#c3d6ee" stroke-width="3" stroke-linecap="round"/>
+    <path d="M104 78l7 7 15-16" stroke="#1185fe" stroke-width="5" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+  </g>
+
+  <!-- box body -->
+  <rect x="46" y="104" width="148" height="106" rx="18" fill="url(#body)" stroke="#7fb0e3" stroke-width="1.5"/>
+  <!-- body gloss -->
+  <rect x="58" y="116" width="124" height="34" rx="13" fill="url(#gloss)"/>
+  <!-- front emblem -->
+  <circle cx="120" cy="166" r="25" fill="#ffffff" opacity="0.92"/>
+  <path d="M108 166l8 8 17-18" stroke="#0a6ad8" stroke-width="6" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+
+  <!-- lid -->
+  <rect x="38" y="86" width="164" height="30" rx="15" fill="url(#lid)" stroke="#7fb0e3" stroke-width="1.5"/>
+  <rect x="46" y="90" width="148" height="6" rx="3" fill="#ffffff" opacity="0.55"/>
+  <!-- slot -->
+  <rect x="86" y="96" width="68" height="10" rx="5" fill="#0d1b2e"/>
+  <rect x="88" y="97" width="64" height="3" rx="1.5" fill="#000000" opacity="0.5"/>
+</svg>

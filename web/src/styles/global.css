@@ -1,30 +1,41 @@
 @import "tailwindcss";
 
-/* ---- Design tokens (Tailwind v4 @theme) ----------------------------------- */
+/* ============================================================================
+   poll.blue — skeuomorphic "voting in the clouds"
+   Glossy reflective sky-glass cards (pointer-tilt), a living cloudscape, and
+   matte "ballot-slip" inputs — deliberately a different material from the cards.
+   Light source is top-of-screen throughout.
+   ========================================================================== */
+
 @theme {
   --font-display: "Bricolage Grotesque", ui-sans-serif, system-ui, sans-serif;
   --font-body: "Hanken Grotesk", ui-sans-serif, system-ui, sans-serif;
 
-  /* ink + paper */
-  --color-ink: #0b1220;
-  --color-ink-soft: #4a5a72;
-  --color-ink-faint: #8a99af;
-  --color-paper: #f6f8fc;
-  --color-paper-2: #eef2f9;
-  --color-card: #ffffff;
-  --color-line: #e2e8f4;
+  --color-ink: #0d1b2e;
+  --color-ink-soft: #3f567a;
+  --color-ink-faint: #7d93b3;
 
-  /* brand: bluesky blue */
+  --color-paper: #dcefff;
+  --color-paper-2: #eef5fd;
+  --color-card: #ffffff;
+  --color-line: #c4d8ee;
+
   --color-brand: #1185fe;
   --color-brand-deep: #0a6ad8;
-  --color-brand-ink: #073a86;
-  --color-brand-tint: #e8f1ff;
+  --color-brand-ink: #08356f;
+  --color-brand-tint: #e2efff;
 
-  --radius-xl: 1.25rem;
-  --radius-2xl: 1.75rem;
+  --radius-xl: 1.1rem;
+  --radius-2xl: 1.7rem;
 
-  --shadow-soft: 0 1px 2px rgba(11, 18, 32, 0.04), 0 8px 24px -12px rgba(11, 18, 32, 0.18);
-  --shadow-lift: 0 2px 6px rgba(11, 18, 32, 0.05), 0 24px 60px -28px rgba(17, 133, 254, 0.45);
+  --shadow-cloud:
+    inset 0 2px 0 rgba(255, 255, 255, 1),
+    inset 0 1px 1px rgba(255, 255, 255, 0.9),
+    inset 0 -3px 5px rgba(55, 100, 155, 0.10),
+    0 1px 1px rgba(35, 85, 150, 0.16),
+    0 18px 34px -16px rgba(35, 85, 150, 0.42),
+    0 42px 72px -38px rgba(35, 85, 150, 0.5);
+  --shadow-lift: var(--shadow-cloud);
 }
 
 /* ---- Base ----------------------------------------------------------------- */
@@ -38,25 +49,23 @@
   body {
     font-family: var(--font-body);
     color: var(--color-ink);
-    background-color: var(--color-paper);
-    /* atmospheric mesh: a few soft blue blooms */
-    background-image:
-      radial-gradient(48rem 48rem at 12% -8%, rgba(17, 133, 254, 0.14), transparent 60%),
-      radial-gradient(40rem 40rem at 108% 0%, rgba(10, 106, 216, 0.10), transparent 55%),
-      radial-gradient(60rem 40rem at 50% 120%, rgba(17, 133, 254, 0.08), transparent 60%);
-    background-attachment: fixed;
     min-height: 100dvh;
+    background-attachment: fixed;
+    /* dramatic sky: sun-haze up top, a bright cloud-bank at the horizon */
+    background-image:
+      radial-gradient(1200px 520px at 50% -6%, rgba(255, 255, 255, 0.55), transparent 60%),
+      radial-gradient(150% 66% at 50% 120%, rgba(255, 255, 255, 0.96), transparent 56%),
+      linear-gradient(180deg, #6fb7f2 0%, #97ccf7 28%, #c6e5fc 60%, #eef8ff 100%);
   }
 
-  /* film grain overlay for texture */
   body::before {
     content: "";
     position: fixed;
     inset: 0;
     z-index: 0;
     pointer-events: none;
-    opacity: 0.5;
-    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.035'/%3E%3C/svg%3E");
+    opacity: 0.4;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.03'/%3E%3C/svg%3E");
   }
 
   h1, h2, h3, h4 {
@@ -66,68 +75,286 @@
     line-height: 1.02;
   }
 
-  ::selection {
-    background: var(--color-brand);
-    color: white;
-  }
-
-  :focus-visible {
-    outline: 2px solid var(--color-brand);
-    outline-offset: 2px;
-  }
+  ::selection { background: var(--color-brand); color: white; }
+  :focus-visible { outline: 2px solid var(--color-brand); outline-offset: 2px; }
 }
+
+/* ---- Cloudscape ----------------------------------------------------------- */
+.clouds { position: fixed; inset: 0; z-index: 0; overflow: hidden; pointer-events: none; }
+.cloud {
+  position: absolute;
+  border-radius: 999px;
+  background: radial-gradient(closest-side, #ffffff, rgba(255, 255, 255, 0.62) 55%, rgba(255, 255, 255, 0) 100%);
+  filter: blur(9px);
+  animation: driftX ease-in-out infinite alternate;
+}
+@keyframes driftX { from { transform: translateX(-7vw); } to { transform: translateX(7vw); } }
 
 /* ---- Components ------------------------------------------------------------ */
 @layer components {
+  /* Molded reflective sky-glass panel */
+  .card {
+    position: relative;
+    background:
+      radial-gradient(130% 90% at 50% -14%, rgba(255, 255, 255, 0.96), rgba(255, 255, 255, 0) 58%),
+      linear-gradient(180deg, #ffffff 0%, #e8f1fb 100%);
+    border: 1px solid rgba(255, 255, 255, 0.85);
+    border-radius: var(--radius-2xl);
+    box-shadow: var(--shadow-cloud);
+  }
+
   .btn {
-    @apply inline-flex items-center justify-center gap-2 rounded-full px-6 py-3 font-semibold transition-all duration-200 select-none;
+    @apply relative inline-flex items-center justify-center gap-2 rounded-full px-6 py-3 font-semibold select-none;
+    transition: transform 0.1s ease, filter 0.15s ease, box-shadow 0.15s ease;
   }
+
+  /* Glossy gel — the "cast" button */
   .btn-primary {
-    background: linear-gradient(180deg, var(--color-brand), var(--color-brand-deep));
-    color: white;
-    box-shadow: var(--shadow-lift);
+    color: #fff;
+    text-shadow: 0 1px 1px rgba(4, 40, 100, 0.45);
+    background:
+      linear-gradient(180deg, rgba(255, 255, 255, 0.72) 0%, rgba(255, 255, 255, 0.12) 45%, rgba(255, 255, 255, 0) 46%, rgba(255, 255, 255, 0.1) 100%),
+      linear-gradient(180deg, #5aabff 0%, #1685fe 48%, #085ec6 100%);
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.9),
+      inset 0 -3px 5px rgba(6, 55, 130, 0.5),
+      0 3px 0 #0850a8,
+      0 11px 22px -6px rgba(10, 90, 200, 0.6);
   }
-  .btn-primary:hover:not(:disabled) {
-    transform: translateY(-1px);
-    filter: saturate(1.1) brightness(1.03);
+  .btn-primary:hover:not(:disabled) { filter: brightness(1.06) saturate(1.06); }
+  .btn-primary:active:not(:disabled) {
+    transform: translateY(3px);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.7), inset 0 -1px 3px rgba(6, 55, 130, 0.5), 0 1px 0 #0850a8, 0 4px 10px -5px rgba(10, 90, 200, 0.55);
   }
-  .btn-primary:active:not(:disabled) { transform: translateY(0); }
-  .btn-primary:disabled { opacity: 0.45; box-shadow: none; cursor: not-allowed; }
+  .btn-primary:disabled { opacity: 0.5; box-shadow: none; cursor: not-allowed; }
 
   .btn-ghost {
-    @apply border;
-    border-color: var(--color-line);
-    background: var(--color-card);
     color: var(--color-ink);
+    background: linear-gradient(180deg, #ffffff 0%, #e2edf9 100%);
+    border: 1px solid rgba(120, 160, 210, 0.5);
+    box-shadow: inset 0 1px 0 #fff, inset 0 -2px 3px rgba(55, 100, 155, 0.12), 0 3px 0 rgba(150, 180, 220, 0.55), 0 9px 17px -8px rgba(35, 85, 150, 0.5);
   }
-  .btn-ghost:hover:not(:disabled) { border-color: var(--color-brand); color: var(--color-brand-deep); }
+  .btn-ghost:hover:not(:disabled) { color: var(--color-brand-deep); border-color: var(--color-brand); }
+  .btn-ghost:active:not(:disabled) { transform: translateY(2px); box-shadow: inset 0 1px 0 #fff, 0 1px 0 rgba(150, 180, 220, 0.55), 0 4px 10px -6px rgba(35, 85, 150, 0.5); }
+  .btn-ghost:disabled { opacity: 0.5; cursor: not-allowed; }
 
-  .card {
-    background: var(--color-card);
-    border: 1px solid var(--color-line);
-    border-radius: var(--radius-2xl);
-    box-shadow: var(--shadow-soft);
-  }
-
+  /* Matte "ballot slip" — intentionally NOT glossy; a paper form field with a
+     fill-in rule along the bottom. Squarer than the cards. */
   .field {
-    @apply w-full rounded-2xl border bg-white px-4 py-3 text-[1rem] transition-colors;
-    border-color: var(--color-line);
+    @apply w-full px-4 py-3 text-[1rem];
+    border-radius: 0.7rem;
     color: var(--color-ink);
+    background: linear-gradient(180deg, #eef4fb 0%, #ffffff 55%);
+    border: 1px solid rgba(120, 160, 210, 0.55);
+    border-bottom: 2.5px solid rgba(90, 130, 180, 0.6);
+    box-shadow: inset 0 2px 4px rgba(35, 85, 150, 0.1);
+    transition: border-color 0.15s ease, box-shadow 0.15s ease;
   }
   .field::placeholder { color: var(--color-ink-faint); }
-  .field:focus { outline: none; border-color: var(--color-brand); box-shadow: 0 0 0 4px var(--color-brand-tint); }
+  .field:focus {
+    outline: none;
+    border-color: var(--color-brand);
+    border-bottom-color: var(--color-brand);
+    box-shadow: inset 0 2px 4px rgba(35, 85, 150, 0.08), 0 0 0 4px var(--color-brand-tint);
+  }
 
   .pill {
     @apply inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold;
-    background: var(--color-brand-tint);
     color: var(--color-brand-ink);
+    background: linear-gradient(180deg, #edf5ff, #d2e6ff);
+    border: 1px solid rgba(120, 160, 210, 0.4);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.9), inset 0 -1px 1px rgba(55, 100, 155, 0.1), 0 1px 1px rgba(35, 85, 150, 0.18);
   }
+
+  input[type="checkbox"] {
+    appearance: none;
+    -webkit-appearance: none;
+    width: 1.2rem;
+    height: 1.2rem;
+    border-radius: 0.45rem;
+    background: linear-gradient(180deg, #dbe7f5, #f6fbff);
+    border: 1px solid rgba(110, 150, 200, 0.65);
+    box-shadow: inset 0 2px 4px rgba(35, 85, 150, 0.22);
+    display: inline-grid;
+    place-content: center;
+    cursor: pointer;
+    transition: all 0.12s ease;
+  }
+  input[type="checkbox"]::after {
+    content: "";
+    width: 0.7rem;
+    height: 0.7rem;
+    transform: scale(0);
+    transition: transform 0.12s ease;
+    background: #fff;
+    clip-path: polygon(14% 44%, 0 60%, 40% 100%, 100% 22%, 84% 6%, 38% 66%);
+  }
+  input[type="checkbox"]:checked {
+    background: linear-gradient(180deg, #5aabff, #0a63cf);
+    border-color: #0850a8;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.6), 0 2px 4px -1px rgba(10, 90, 200, 0.5);
+  }
+  input[type="checkbox"]:checked::after { transform: scale(1); }
 }
 
-/* poll results bar fill animation */
+/* ---- Reflective pointer-tilt (driven by a global script in Base) ----------- */
+.tilt {
+  position: relative;
+  transform: perspective(1000px) rotateX(var(--ry, 0deg)) rotateY(var(--rx, 0deg));
+  transform-style: preserve-3d;
+  transition: transform 0.45s cubic-bezier(0.2, 0.8, 0.2, 1);
+  will-change: transform;
+}
+.tilt.tilting { transition: transform 0.08s ease-out; }
+.tilt::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  background: radial-gradient(680px circle at var(--mx, 50%) var(--my, 50%), rgba(255, 255, 255, 0.6), rgba(255, 255, 255, 0) 46%);
+  mix-blend-mode: screen;
+  opacity: 0;
+  transition: opacity 0.35s ease;
+}
+.tilt.tilting::after { opacity: 0.85; }
+
+/* poll results bar fill */
 @keyframes grow-bar { from { transform: scaleX(0); } to { transform: scaleX(1); } }
 .bar-fill { transform-origin: left; animation: grow-bar 1.1s cubic-bezier(0.16, 1, 0.3, 1) forwards; }
 
-/* staggered entrance */
+/* entrance */
 @keyframes rise { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: translateY(0); } }
 .rise { opacity: 0; animation: rise 0.7s cubic-bezier(0.16, 1, 0.3, 1) forwards; }
+
+/* hero cloud drift */
+@keyframes drift { 0%, 100% { transform: translateY(0) rotate(-0.5deg); } 50% { transform: translateY(-12px) rotate(0.5deg); } }
+.drift { animation: drift 9s ease-in-out infinite; }
+
+/* "your vote" stamp */
+@keyframes stamp { 0% { transform: scale(1.7) rotate(-14deg); opacity: 0; } 55% { transform: scale(0.9) rotate(-9deg); opacity: 1; } 100% { transform: scale(1) rotate(-5deg); opacity: 1; } }
+.stamp { animation: stamp 0.45s cubic-bezier(0.2, 1.5, 0.4, 1) both; }
+
+/* Ballot check-target on each option row */
+.ballot-box {
+  display: inline-grid;
+  place-content: center;
+  width: 1.4rem;
+  height: 1.4rem;
+  flex-shrink: 0;
+  border-radius: 0.4rem;
+  color: #fff;
+  font-size: 0.85rem;
+  font-weight: 800;
+  line-height: 1;
+  background: linear-gradient(180deg, #e7eff9, #ffffff);
+  border: 1.5px solid rgba(110, 150, 200, 0.6);
+  box-shadow: inset 0 2px 3px rgba(35, 85, 150, 0.15);
+  transition: all 0.15s ease;
+}
+.ballot-box.checked {
+  background: linear-gradient(180deg, #5aabff, #0a63cf);
+  border-color: #0850a8;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.55), 0 2px 6px -1px rgba(10, 90, 200, 0.55);
+}
+
+/* Punch-card option rows */
+.punch-card {
+  position: relative;
+  border-radius: 4px;
+  clip-path: polygon(0 0, calc(100% - 16px) 0, 100% 16px, 100% 100%, 0 100%);
+  background:
+    radial-gradient(circle 2.4px at center, rgba(35, 85, 150, 0.26) 2.4px, transparent 3px) bottom 6px left 13px / 15px 7px repeat-x,
+    linear-gradient(180deg, #ffffff, #eef4fb);
+  border: 1px solid rgba(120, 160, 210, 0.5);
+  box-shadow: inset 0 1px 0 #fff, 0 2px 6px -2px rgba(35, 85, 150, 0.28);
+}
+.punch-card .col {
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  color: var(--color-ink-faint);
+}
+
+/* Paper-ballot card (the voting/results page) */
+.ballot-card {
+  position: relative;
+  /* crisp paper + a faint security guilloché, like official paper */
+  background:
+    repeating-linear-gradient(45deg, rgba(35, 85, 150, 0.035) 0 2px, transparent 2px 9px),
+    linear-gradient(180deg, #ffffff 0%, #f3f7fd 100%);
+  border: 1px solid rgba(150, 185, 220, 0.55);
+  border-radius: 1.15rem;
+  box-shadow: var(--shadow-cloud);
+}
+.ballot-header {
+  position: relative;
+  text-align: center;
+  font-family: var(--font-display);
+  text-transform: uppercase;
+  letter-spacing: 0.28em;
+  font-size: 0.66rem;
+  font-weight: 700;
+  color: var(--color-ink-faint);
+  padding-bottom: 0.8rem;
+  margin-bottom: 1.1rem;
+  border-bottom: 2px dashed rgba(120, 160, 210, 0.55);
+}
+
+/* verifier "technical details" */
+.tech-details { border-top: 2px dashed rgba(120, 160, 210, 0.5); }
+.tech-details code {
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: 0.78em;
+  background: rgba(35, 85, 150, 0.08);
+  padding: 0.1em 0.35em;
+  border-radius: 0.3em;
+  word-break: break-all;
+}
+
+/* WYSIWYG composer — matte "ballot slip" material, like the inputs */
+.composer-box {
+  border-radius: 0.9rem;
+  padding: 0.9rem 1rem;
+  background: linear-gradient(180deg, #eef4fb 0%, #ffffff 55%);
+  border: 1px solid rgba(120, 160, 210, 0.55);
+  border-bottom: 2.5px solid rgba(90, 130, 180, 0.6);
+  box-shadow: inset 0 2px 4px rgba(35, 85, 150, 0.1);
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+.composer-box:focus-within {
+  border-color: var(--color-brand);
+  border-bottom-color: var(--color-brand);
+  box-shadow: inset 0 2px 4px rgba(35, 85, 150, 0.08), 0 0 0 4px var(--color-brand-tint);
+}
+.composer-input { outline: none; min-height: 7rem; font-size: 1.05rem; line-height: 1.5; color: var(--color-ink); }
+.composer-input p { margin: 0 0 0.5rem; }
+.composer-input p:last-child { margin-bottom: 0; }
+.composer-input .facet { color: var(--color-brand-deep); font-weight: 600; }
+.composer-input p.is-editor-empty:first-child::before {
+  content: attr(data-placeholder);
+  color: var(--color-ink-faint);
+  float: left;
+  height: 0;
+  pointer-events: none;
+}
+
+/* "Deposit the ballot" — the card dives into a rising ballot box on cast */
+.depositing { animation: deposit 1.15s cubic-bezier(0.5, 0.05, 0.6, 1); z-index: 45; }
+@keyframes deposit {
+  0% { transform: translateY(0) scale(1); opacity: 1; }
+  22% { transform: translateY(-10px) scale(1.02); opacity: 1; }
+  60% { transform: translateY(42vh) scale(0.34) rotate(-1deg); opacity: 1; }
+  74% { transform: translateY(48vh) scale(0.24); opacity: 0; }
+  75% { transform: translateY(-24px) scale(0.92); opacity: 0; }
+  100% { transform: translateY(0) scale(1); opacity: 1; }
+}
+.ballot-drop { position: fixed; inset: 0; z-index: 40; pointer-events: none; display: flex; align-items: flex-end; justify-content: center; }
+.ballot-drop .box { width: 156px; height: 156px; margin-bottom: 6vh; background: url("/ballot-box.svg") center / contain no-repeat; filter: drop-shadow(0 16px 24px rgba(35, 85, 150, 0.4)); animation: boxRise 1.15s ease; }
+@keyframes boxRise { 0% { transform: translateY(150%); } 22% { transform: translateY(0); } 82% { transform: translateY(0); } 100% { transform: translateY(150%); } }
+
+@media (prefers-reduced-motion: reduce) {
+  .cloud, .drift, .tilt, .depositing, .ballot-drop .box { animation: none !important; }
+  .tilt { transform: none !important; }
+}

@@ -29,6 +29,11 @@ const demoOptions = [
   <!-- Hero -->
   <section class="mx-auto grid max-w-5xl gap-12 px-6 pt-10 pb-20 md:grid-cols-[1.05fr_0.95fr] md:items-center md:pt-16">
     <div>
+      <div class="rise mb-7 inline-block" style="animation-delay: 20ms">
+        <div class="drift overflow-hidden rounded-[1.6rem]" style="box-shadow: var(--shadow-cloud); border: 1px solid rgba(255,255,255,0.7)">
+          <img src="/cloud-mark.png" alt="A cloud shaped like a question mark" width="140" height="140" class="block h-32 w-32 object-cover sm:h-36 sm:w-36" />
+        </div>
+      </div>
       <p class="pill rise" style="animation-delay: 40ms">
         <span class="inline-block h-1.5 w-1.5 rounded-full" style="background: var(--color-brand)"></span>
         Polls, for the Atmosphere.
@@ -53,7 +58,7 @@ const demoOptions = [
 
     <!-- Live-looking demo card -->
     <div class="rise" style="animation-delay: 260ms">
-      <div class="card relative overflow-hidden p-6 sm:p-7">
+      <div class="card tilt relative overflow-hidden p-6 sm:p-7">
         <div
           class="pointer-events-none absolute -right-16 -top-16 h-44 w-44 rounded-full blur-2xl"
           style="background: radial-gradient(circle, rgba(17,133,254,0.25), transparent 70%)"
@@ -97,7 +102,7 @@ const demoOptions = [
 
     <div class="mt-10 grid gap-5 sm:grid-cols-3">
       {steps.map((s) => (
-        <div class="card flex flex-col gap-3 p-6">
+        <div class="card tilt flex flex-col gap-3 p-6">
           <span class="font-display text-sm font-bold tracking-widest" style="color: var(--color-brand)">{s.n}</span>
           <h3 class="text-xl">{s.title}</h3>
           <p class="text-[var(--color-ink-soft)]">{s.body}</p>
@@ -105,7 +110,7 @@ const demoOptions = [
       ))}
     </div>
 
-    <div class="card mt-10 flex flex-col items-center gap-5 p-10 text-center sm:p-14">
+    <div class="card tilt mt-10 flex flex-col items-center gap-5 p-10 text-center sm:p-14">
       <h2 class="max-w-xl text-3xl sm:text-4xl">Ready when you are.</h2>
       <p class="max-w-md text-[var(--color-ink-soft)]">C'mon, press the button. I know you want to. Post some cursed question. Please.</p>
       <a href="/create" class="btn btn-primary text-base">Create your first poll</a>
