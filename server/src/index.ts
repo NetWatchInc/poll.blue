@@ -37,6 +37,7 @@ app.post("/api/poll/:id/vote", vote);
 // --- static frontend --------------------------------------------------------
 app.get("/", file("index.html"));
 app.get("/create", file("create/index.html"));
+app.get("/mine", file("mine/index.html"));
 // Both the posted option links (/p/{id}/{n}) and the results page (/p/{id})
 // serve the results page; its JS casts the vote (for /p/{id}/{n}) via POST.
 app.get("/p/:id/:vote", file("results/index.html"));
