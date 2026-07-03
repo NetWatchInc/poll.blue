@@ -17,9 +17,19 @@ export function byteLength(s: string): number {
   return new TextEncoder().encode(s).length;
 }
 
+// One shared segmenter — constructing Intl.Segmenter per keystroke is wasteful.
+let _seg: Intl.Segmenter | undefined;
+function segmenter(): Intl.Segmenter {
+  return (_seg ??= new Intl.Segmenter());
+}
+
+export function graphemeLen(s: string): number {
+  return [...segmenter().segment(s)].length;
+}
+
 export function postLengthValid(text: string): boolean {
   if (byteLength(text) > 3000) return false;
-  if ([...new Intl.Segmenter().segment(text)].length > 300) return false;
+  if (graphemeLen(text) > 300) return false;
   return true;
 }
 
@@ -82,10 +92,6 @@ export function generatePollText(opts: {
 /** The plain post text (no facets) — for the live grapheme counter + preview. */
 export function composedText(bodyText: string, answers: string[]): string {
   return composeParts(bodyText, answers, "", "").map((p) => p.text).join("");
-}
-
-export function graphemeLen(s: string): number {
-  return [...new Intl.Segmenter().segment(s)].length;
 }
 
 function buildTemplate(parts: TemplatePart[]): PollText {

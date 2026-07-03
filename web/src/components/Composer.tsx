@@ -77,13 +77,11 @@ export default function Composer({ value, onChange, placeholder }: Props) {
     });
     edRef.current = editor;
     return () => { editor.destroy(); edRef.current = null; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-
-  // Reflect external resets (e.g. "New poll") without disturbing normal typing.
-  useEffect(() => {
-    const ed = edRef.current;
-    if (ed && value !== ed.getText()) ed.commands.setContent(value || "");
-  }, [value]);
+  // NB: the editor is uncontrolled after mount — Tiptap owns its state and reports
+  // changes via onUpdate. Do NOT setContent() from `value` on every render; that
+  // fights the cursor and glitches typing. Resets happen by remounting (New poll).
 
   return <div ref={ref} class="composer-box"></div>;
 }
