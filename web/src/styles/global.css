@@ -340,21 +340,54 @@
   pointer-events: none;
 }
 
-/* "Deposit the ballot" — the card dives into a rising ballot box on cast */
-.depositing { animation: deposit 1.15s cubic-bezier(0.5, 0.05, 0.6, 1); z-index: 45; }
-@keyframes deposit {
-  0% { transform: translateY(0) scale(1); opacity: 1; }
-  22% { transform: translateY(-10px) scale(1.02); opacity: 1; }
-  60% { transform: translateY(42vh) scale(0.34) rotate(-1deg); opacity: 1; }
-  74% { transform: translateY(48vh) scale(0.24); opacity: 0; }
-  75% { transform: translateY(-24px) scale(0.92); opacity: 0; }
-  100% { transform: translateY(0) scale(1); opacity: 1; }
+/* "Cast the ballot" — a giant ballot box rises from the bottom of the screen and
+   a ballot slip drops into it. Overlay-only (never touches the page card), so
+   it stays smooth. */
+.ballot-cast { position: fixed; inset: 0; z-index: 60; pointer-events: none; overflow: hidden; }
+.ballot-cast .box {
+  position: absolute;
+  left: 50%;
+  bottom: 0;
+  width: min(560px, 94vw);
+  aspect-ratio: 1 / 1;
+  background: url("/ballot-box.svg") center bottom / contain no-repeat;
+  filter: drop-shadow(0 -10px 30px rgba(35, 85, 150, 0.35));
+  transform: translate(-50%, 100%);
+  animation: boxUp 1.7s cubic-bezier(0.2, 0.85, 0.25, 1) forwards;
 }
-.ballot-drop { position: fixed; inset: 0; z-index: 40; pointer-events: none; display: flex; align-items: flex-end; justify-content: center; }
-.ballot-drop .box { width: 156px; height: 156px; margin-bottom: 6vh; background: url("/ballot-box.svg") center / contain no-repeat; filter: drop-shadow(0 16px 24px rgba(35, 85, 150, 0.4)); animation: boxRise 1.15s ease; }
-@keyframes boxRise { 0% { transform: translateY(150%); } 22% { transform: translateY(0); } 82% { transform: translateY(0); } 100% { transform: translateY(150%); } }
+.ballot-cast .slip {
+  position: absolute;
+  left: 50%;
+  top: 6%;
+  width: min(150px, 32vw);
+  aspect-ratio: 3 / 4;
+  border-radius: 12px;
+  background: linear-gradient(180deg, #ffffff, #e7f0fb);
+  border: 1px solid var(--color-line);
+  box-shadow: 0 18px 34px -10px rgba(35, 85, 150, 0.55);
+  display: grid;
+  place-items: center;
+  transform: translateX(-50%);
+  animation: slipDrop 1.2s cubic-bezier(0.55, 0.1, 0.72, 1) forwards;
+}
+.ballot-cast .slip svg { width: 44%; height: 44%; }
+@keyframes boxUp {
+  0% { transform: translate(-50%, 100%); }
+  26% { transform: translate(-50%, -3%); }
+  36% { transform: translate(-50%, 0); }
+  80% { transform: translate(-50%, 0); }
+  100% { transform: translate(-50%, 103%); }
+}
+@keyframes slipDrop {
+  0% { transform: translateX(-50%) translateY(-30px) rotate(-7deg) scale(1); opacity: 0; }
+  16% { opacity: 1; }
+  62% { transform: translateX(-50%) translateY(46vh) rotate(4deg) scale(0.5); opacity: 1; }
+  78% { transform: translateX(-50%) translateY(52vh) rotate(1deg) scale(0.3); opacity: 0; }
+  100% { opacity: 0; }
+}
 
 @media (prefers-reduced-motion: reduce) {
-  .cloud, .drift, .tilt, .depositing, .ballot-drop .box { animation: none !important; }
+  .cloud, .drift, .tilt, .ballot-cast .box, .ballot-cast .slip { animation: none !important; }
   .tilt { transform: none !important; }
+  .ballot-cast { display: none; }
 }

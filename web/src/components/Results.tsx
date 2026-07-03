@@ -338,7 +338,7 @@ export default function Results() {
       setNeedLogin(false);
       setVoteCast(true);
       setCastFlash(true);
-      setTimeout(() => setCastFlash(false), 1400);
+      setTimeout(() => setCastFlash(false), 1800);
     } catch (e) {
       setCastError((e as Error).message || "Could not record your vote.");
     }
@@ -415,7 +415,7 @@ export default function Results() {
   return (
     <>
       <div class="rise">
-      <div class={`tilt ballot-card overflow-hidden p-7 sm:p-9 ${castFlash ? "depositing" : ""}`}>
+      <div class="tilt ballot-card overflow-hidden p-7 sm:p-9">
         <div class="ballot-header">✦ poll.blue ballot ✦</div>
         <div class="flex items-start justify-between gap-4">
           <h1 class="text-3xl leading-tight sm:text-4xl">{d.question}</h1>
@@ -693,7 +693,10 @@ export default function Results() {
       )}
 
       {castFlash && (
-        <div class="ballot-drop" aria-hidden="true">
+        <div class="ballot-cast" aria-hidden="true">
+          <div class="slip">
+            <svg viewBox="0 0 24 24" fill="none"><path d="M5 13l4 4L19 7" stroke="#1185fe" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" /></svg>
+          </div>
           <div class="box"></div>
         </div>
       )}
