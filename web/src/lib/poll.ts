@@ -47,38 +47,45 @@ export interface PollText {
   pollFacets: Facet[];
 }
 
-const EMOJI_NUMBERS = ["1️⃣", "2️⃣", "3️⃣", "4️⃣"];
+const EMOJI_NUMBERS = ["1️⃣", "2️⃣", "3️⃣", "4️⃣", "5️⃣", "6️⃣", "7️⃣", "8️⃣", "9️⃣", "🔟"];
 
-export function generatePollText(opts: {
-  visibleId: string;
-  question: string;
-  answers: string[];
-  origin?: string;
-}): PollText {
-  const { visibleId, question, answers } = opts;
-  const base = opts.origin ?? "https://poll.blue";
-
-  const parts: TemplatePart[] = [
-    { text: `${question}\n\n`, truncate: false, pollFacet: "question" },
-  ];
+// Compose the post's text parts: the free-form body, then the option lines, then
+// "Show results". Shared by the facet builder and the plain-text length counter.
+function composeParts(bodyText: string, answers: string[], base: string, visibleId: string): TemplatePart[] {
+  const parts: TemplatePart[] = [{ text: `${bodyText}\n\n`, truncate: false }];
   answers.forEach((answer, i) => {
     parts.push({ text: `${EMOJI_NUMBERS[i]} `, truncate: false });
-    parts.push({
-      text: answer,
-      link: `${base}/p/${visibleId}/${i + 1}`,
-      pollFacet: "option",
-      truncate: false,
-    });
+    parts.push({ text: answer, link: `${base}/p/${visibleId}/${i + 1}`, pollFacet: "option", truncate: false });
     parts.push({ text: "\n", truncate: false });
   });
   parts.push({ text: "\n", truncate: false });
   parts.push({ text: "📊 Show results", link: `${base}/p/${visibleId}/0`, truncate: false });
+  return parts;
+}
 
-  const built = buildTemplate(parts);
+export function generatePollText(opts: {
+  visibleId: string;
+  body: { text: string; facets?: Facet[] };
+  answers: string[];
+  origin?: string;
+}): PollText {
+  const base = opts.origin ?? "https://poll.blue";
+  const built = buildTemplate(composeParts(opts.body.text, opts.answers, base, opts.visibleId));
+  // The body sits at offset 0, so its facets' byte offsets are already correct.
+  if (opts.body.facets?.length) built.links = [...opts.body.facets, ...built.links];
   if (!postLengthValid(built.text)) {
     throw new Error("poll is too long");
   }
   return built;
+}
+
+/** The plain post text (no facets) — for the live grapheme counter + preview. */
+export function composedText(bodyText: string, answers: string[]): string {
+  return composeParts(bodyText, answers, "", "").map((p) => p.text).join("");
+}
+
+export function graphemeLen(s: string): number {
+  return [...new Intl.Segmenter().segment(s)].length;
 }
 
 function buildTemplate(parts: TemplatePart[]): PollText {
