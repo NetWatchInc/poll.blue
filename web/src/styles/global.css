@@ -237,6 +237,7 @@
 
 /* Ballot check-target on each option row */
 .ballot-box {
+  position: relative;
   display: inline-grid;
   place-content: center;
   width: 1.4rem;
@@ -340,54 +341,29 @@
   pointer-events: none;
 }
 
-/* "Cast the ballot" — a giant ballot box rises from the bottom of the screen and
-   a ballot slip drops into it. Overlay-only (never touches the page card), so
-   it stays smooth. */
-.ballot-cast { position: fixed; inset: 0; z-index: 60; pointer-events: none; overflow: hidden; }
-.ballot-cast .box {
+/* Casting a vote "stamps" the chosen option — a quick press of the row + an ink
+   ripple radiating from the ✓ check-target. In-context, ~450ms, no overlay. */
+.stamping { animation: rowPress 0.42s cubic-bezier(0.3, 0.9, 0.3, 1); }
+@keyframes rowPress {
+  0% { transform: scale(1); }
+  28% { transform: scale(0.975); }
+  100% { transform: scale(1); }
+}
+.stamp-ripple {
   position: absolute;
-  left: 50%;
-  bottom: 0;
-  width: min(560px, 94vw);
-  aspect-ratio: 1 / 1;
-  background: url("/ballot-box.svg") center bottom / contain no-repeat;
-  filter: drop-shadow(0 -10px 30px rgba(35, 85, 150, 0.35));
-  transform: translate(-50%, 100%);
-  animation: boxUp 1.7s cubic-bezier(0.2, 0.85, 0.25, 1) forwards;
+  inset: -2px;
+  border-radius: 0.5rem;
+  border: 2.5px solid var(--color-brand);
+  pointer-events: none;
+  animation: stampRipple 0.5s ease-out forwards;
 }
-.ballot-cast .slip {
-  position: absolute;
-  left: 50%;
-  top: 6%;
-  width: min(150px, 32vw);
-  aspect-ratio: 3 / 4;
-  border-radius: 12px;
-  background: linear-gradient(180deg, #ffffff, #e7f0fb);
-  border: 1px solid var(--color-line);
-  box-shadow: 0 18px 34px -10px rgba(35, 85, 150, 0.55);
-  display: grid;
-  place-items: center;
-  transform: translateX(-50%);
-  animation: slipDrop 1.2s cubic-bezier(0.55, 0.1, 0.72, 1) forwards;
-}
-.ballot-cast .slip svg { width: 44%; height: 44%; }
-@keyframes boxUp {
-  0% { transform: translate(-50%, 100%); }
-  26% { transform: translate(-50%, -3%); }
-  36% { transform: translate(-50%, 0); }
-  80% { transform: translate(-50%, 0); }
-  100% { transform: translate(-50%, 103%); }
-}
-@keyframes slipDrop {
-  0% { transform: translateX(-50%) translateY(-30px) rotate(-7deg) scale(1); opacity: 0; }
-  16% { opacity: 1; }
-  62% { transform: translateX(-50%) translateY(46vh) rotate(4deg) scale(0.5); opacity: 1; }
-  78% { transform: translateX(-50%) translateY(52vh) rotate(1deg) scale(0.3); opacity: 0; }
-  100% { opacity: 0; }
+@keyframes stampRipple {
+  0% { transform: scale(1); opacity: 0.75; }
+  100% { transform: scale(3.4); opacity: 0; }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .cloud, .drift, .tilt, .ballot-cast .box, .ballot-cast .slip { animation: none !important; }
+  .cloud, .drift, .tilt, .stamping, .stamp-ripple, .stamp { animation: none !important; }
   .tilt { transform: none !important; }
-  .ballot-cast { display: none; }
+  .stamp-ripple { display: none; }
 }

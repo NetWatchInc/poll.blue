@@ -338,7 +338,7 @@ export default function Results() {
       setNeedLogin(false);
       setVoteCast(true);
       setCastFlash(true);
-      setTimeout(() => setCastFlash(false), 1800);
+      setTimeout(() => setCastFlash(false), 550);
     } catch (e) {
       setCastError((e as Error).message || "Could not record your vote.");
     }
@@ -491,7 +491,7 @@ export default function Results() {
               const isVoted = myVote === i + 1;
               return (
                 <div
-                  class={`punch-card flex items-center justify-between gap-3 px-4 py-3.5 transition-shadow ${canVote ? "cursor-pointer hover:shadow-[var(--shadow-lift)]" : ""}`}
+                  class={`punch-card flex items-center justify-between gap-3 px-4 py-3.5 transition-shadow ${canVote ? "cursor-pointer hover:shadow-[var(--shadow-lift)]" : ""} ${castFlash && highlight === i + 1 ? "stamping" : ""}`}
                   style={`border-color:${isVoted ? "var(--color-brand)" : "var(--color-line)"}`}
                   onClick={canVote ? () => requestVote(i + 1) : undefined}
                   role={canVote ? "button" : undefined}
@@ -499,7 +499,10 @@ export default function Results() {
                   onKeyDown={canVote ? (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); requestVote(i + 1); } } : undefined}
                 >
                   <span class="flex items-center gap-2.5 font-medium">
-                    <span class={`ballot-box ${isVoted ? "checked" : ""}`}>{isVoted && <span class="stamp">✓</span>}</span>
+                    <span class={`ballot-box ${isVoted ? "checked" : ""}`}>
+                      {isVoted && <span class="stamp">✓</span>}
+                      {castFlash && highlight === i + 1 && <span class="stamp-ripple"></span>}
+                    </span>
                     <span class="col select-none">{String(i + 1).padStart(2, "0")}</span>
                     {ans}
                   </span>
@@ -519,7 +522,7 @@ export default function Results() {
             const extraVoters = count - shownVoters.length;
             return (
               <div
-                class={`punch-card relative overflow-hidden transition-shadow ${canVote ? "cursor-pointer hover:shadow-[var(--shadow-lift)]" : ""}`}
+                class={`punch-card relative overflow-hidden transition-shadow ${canVote ? "cursor-pointer hover:shadow-[var(--shadow-lift)]" : ""} ${castFlash && highlight === i + 1 ? "stamping" : ""}`}
                 style={`border-color:${isVoted ? "var(--color-brand)" : "var(--color-line)"}`}
                 onClick={canVote ? () => requestVote(i + 1) : undefined}
                 role={canVote ? "button" : undefined}
@@ -534,7 +537,10 @@ export default function Results() {
                 <div class="relative">
                   <div class="flex items-center justify-between gap-3 px-4 py-3.5">
                     <span class="flex items-center gap-2.5 font-medium">
-                      <span class={`ballot-box ${isVoted ? "checked" : ""}`}>{isVoted && <span class="stamp">✓</span>}</span>
+                      <span class={`ballot-box ${isVoted ? "checked" : ""}`}>
+                        {isVoted && <span class="stamp">✓</span>}
+                        {castFlash && highlight === i + 1 && <span class="stamp-ripple"></span>}
+                      </span>
                       <span class="col select-none">{String(i + 1).padStart(2, "0")}</span>
                       {d.answers[i]}
                     </span>
@@ -692,14 +698,6 @@ export default function Results() {
         </div>
       )}
 
-      {castFlash && (
-        <div class="ballot-cast" aria-hidden="true">
-          <div class="slip">
-            <svg viewBox="0 0 24 24" fill="none"><path d="M5 13l4 4L19 7" stroke="#1185fe" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" /></svg>
-          </div>
-          <div class="box"></div>
-        </div>
-      )}
     </>
   );
 }
