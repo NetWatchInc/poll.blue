@@ -212,12 +212,12 @@
   inset: 0;
   border-radius: inherit;
   pointer-events: none;
-  background: radial-gradient(680px circle at var(--mx, 50%) var(--my, 50%), rgba(255, 255, 255, 0.6), rgba(255, 255, 255, 0) 46%);
+  background: radial-gradient(560px circle at var(--mx, 50%) var(--my, 50%), rgba(255, 255, 255, 0.45), rgba(255, 255, 255, 0) 44%);
   mix-blend-mode: screen;
   opacity: 0;
   transition: opacity 0.35s ease;
 }
-.tilt.tilting::after { opacity: 0.85; }
+.tilt.tilting::after { opacity: 0.4; }
 
 /* poll results bar fill */
 @keyframes grow-bar { from { transform: scaleX(0); } to { transform: scaleX(1); } }
@@ -314,6 +314,166 @@
   word-break: break-all;
 }
 
+/* ---- "Verify" card back — a cryptographic-receipt aesthetic ---------------
+   A glossy wax-style seal, a thermal-paper receipt block for the record, and
+   section headers with a brand tick. Makes the technical side feel like an
+   official, self-verifiable artifact rather than a plain info dump. */
+.verify-seal {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 3.1rem;
+  height: 3.1rem;
+  flex-shrink: 0;
+  border-radius: 50%;
+  color: #fff;
+  font-size: 1.45rem;
+  font-weight: 800;
+  transform: rotate(-9deg);
+  text-shadow: 0 1px 1px rgba(4, 40, 100, 0.45);
+  background:
+    radial-gradient(120% 120% at 50% 0, rgba(255, 255, 255, 0.75), rgba(255, 255, 255, 0) 46%),
+    linear-gradient(180deg, #5aabff 0%, #1685fe 52%, #085ec6 100%);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.85), inset 0 -3px 5px rgba(6, 55, 130, 0.45), 0 5px 14px -3px rgba(10, 90, 200, 0.55);
+  animation: sealIn 0.5s cubic-bezier(0.2, 1.4, 0.4, 1) both;
+}
+.verify-seal::after {
+  content: "";
+  position: absolute;
+  inset: 4px;
+  border-radius: 50%;
+  border: 1.5px dashed rgba(255, 255, 255, 0.65);
+}
+.verify-seal--muted {
+  background:
+    radial-gradient(120% 120% at 50% 0, rgba(255, 255, 255, 0.7), rgba(255, 255, 255, 0) 46%),
+    linear-gradient(180deg, #aebfd6 0%, #8ba0bd 52%, #6b82a2 100%);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.8), inset 0 -3px 5px rgba(60, 85, 120, 0.4), 0 5px 14px -3px rgba(70, 100, 150, 0.45);
+}
+@keyframes sealIn { from { opacity: 0; transform: rotate(-9deg) scale(0.4); } to { opacity: 1; transform: rotate(-9deg) scale(1); } }
+
+.receipt {
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  border: 1.5px dashed rgba(120, 160, 210, 0.65);
+  border-radius: 0.6rem;
+  background:
+    repeating-linear-gradient(0deg, rgba(35, 85, 150, 0.04) 0 1px, transparent 1px 6px),
+    linear-gradient(180deg, #ffffff, #f2f7fd);
+  box-shadow: inset 0 1px 0 #fff, inset 0 0 0 3px rgba(255, 255, 255, 0.6);
+}
+.receipt dd { font-weight: 600; color: var(--color-ink); }
+
+.tech-head { display: flex; align-items: center; gap: 0.5rem; }
+.tech-head::before {
+  content: "";
+  width: 0.85rem;
+  height: 2px;
+  border-radius: 2px;
+  background: var(--color-brand);
+}
+
+@media (prefers-reduced-motion: reduce) { .verify-seal { animation: none; } }
+
+/* ---- Flip card (front ⇄ technical details on the back) ---------------------
+   The front sits in normal flow and defines the card's height; the back is
+   overlaid, rotated in, and scrolls internally when its content is taller. The
+   away-facing side is visibility:hidden (after the turn) so it can't catch
+   clicks or tab focus — the visibility delay keeps both sides painted mid-turn
+   so you actually see the card spin. */
+.flip-scene { position: relative; perspective: 1900px; }
+.flip {
+  position: relative;
+  min-height: 100%; /* fill a stretched parent (e.g. a grid column) */
+  transform-style: preserve-3d;
+  transition: transform 0.62s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.flip.is-flipped { transform: rotateY(180deg); }
+.flip-face { backface-visibility: hidden; -webkit-backface-visibility: hidden; }
+
+.flip-front { position: relative; min-height: 100%; transition: visibility 0s; }
+.flip.is-flipped .flip-front { visibility: hidden; transition: visibility 0s linear 0.62s; }
+
+.flip-back {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  transform: rotateY(180deg);
+  visibility: hidden;
+  transition: visibility 0s linear 0.62s;
+}
+.flip.is-flipped .flip-back { visibility: visible; transition: visibility 0s; }
+.flip-scroll { height: 100%; overflow-y: auto; overscroll-behavior: contain; }
+
+/* The corner button that flips the card (position is set inline in FlipCard so
+   the top-right pin can't be lost to the cascade; this is visuals only). It sits
+   flat ON the card surface — no drop shadow to avoid a "floating" look — and
+   rotates with the face it's on. Brand-blue so it reads clearly as a control. */
+.flip-toggle {
+  display: grid;
+  place-items: center;
+  width: 1.8rem;
+  height: 1.8rem;
+  border-radius: 999px;
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 0.95rem;
+  line-height: 1;
+  color: #fff;
+  background: var(--color-brand);
+  border: 1px solid var(--color-brand-deep);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.35);
+  transition: filter 0.15s ease, transform 0.1s ease;
+}
+.flip-toggle:hover { filter: brightness(1.06); }
+.flip-toggle:active { transform: scale(0.93); }
+/* Generous invisible halo so the i / ✕ toggle is far easier to hit than its
+   small visual size. The pseudo is part of the button, so clicks on it count. */
+.flip-toggle::before { content: ""; position: absolute; inset: -14px; border-radius: 999px; }
+
+/* Reusable hit-area expander for small icon buttons (e.g. the ✕ remove buttons):
+   the clickable target grows past the glyph without affecting layout. */
+.hit { position: relative; }
+.hit::before { content: ""; position: absolute; inset: -10px; border-radius: inherit; }
+
+/* ---- Cloud-shaped cards ----------------------------------------------------
+   Mask the card box into a puffy, lobed silhouette (a ring of fixed-size bumps
+   around a slightly-inset body) and cast the soft shadow with a drop-shadow
+   filter — a normal box-shadow would still be a rectangle sitting behind the
+   cloud. Lobes are a fixed radius, so the valleys between them stay shallow and
+   the cards' existing padding keeps text well clear of them. */
+.cloud-edge {
+  --lobe: 16px;
+  --tile: 32px; /* 2 × lobe */
+  border: none !important;
+  box-shadow: none !important;
+  -webkit-mask:
+    radial-gradient(var(--lobe) at 50% var(--lobe), #000 97%, #0000) 0 0 / var(--tile) 51% repeat-x,
+    radial-gradient(var(--lobe) at 50% calc(100% - var(--lobe)), #000 97%, #0000) 0 100% / var(--tile) 51% repeat-x,
+    radial-gradient(var(--lobe) at var(--lobe) 50%, #000 97%, #0000) 0 0 / 51% var(--tile) repeat-y,
+    radial-gradient(var(--lobe) at calc(100% - var(--lobe)) 50%, #000 97%, #0000) 100% 0 / 51% var(--tile) repeat-y,
+    linear-gradient(#000 0 0) 50% 50% / calc(100% - var(--tile)) calc(100% - var(--tile)) no-repeat;
+  mask:
+    radial-gradient(var(--lobe) at 50% var(--lobe), #000 97%, #0000) 0 0 / var(--tile) 51% repeat-x,
+    radial-gradient(var(--lobe) at 50% calc(100% - var(--lobe)), #000 97%, #0000) 0 100% / var(--tile) 51% repeat-x,
+    radial-gradient(var(--lobe) at var(--lobe) 50%, #000 97%, #0000) 0 0 / 51% var(--tile) repeat-y,
+    radial-gradient(var(--lobe) at calc(100% - var(--lobe)) 50%, #000 97%, #0000) 100% 0 / 51% var(--tile) repeat-y,
+    linear-gradient(#000 0 0) 50% 50% / calc(100% - var(--tile)) calc(100% - var(--tile)) no-repeat;
+  filter:
+    drop-shadow(0 10px 16px rgba(35, 85, 150, 0.26))
+    drop-shadow(0 2px 3px rgba(35, 85, 150, 0.18));
+}
+
+/* Personal preference: never show the hand/pointer cursor — use the default
+   arrow on every interactive element (links, buttons, the tappable vote rows,
+   labels…). Unlayered so it also overrides Tailwind's `cursor-pointer` utility.
+   Disabled controls keep their "not-allowed" affordance. */
+a, button, [role="button"], summary, label, select,
+input[type="checkbox"], input[type="radio"],
+.cursor-pointer {
+  cursor: default;
+}
+:disabled, [aria-disabled="true"] { cursor: not-allowed; }
+
 /* WYSIWYG composer — matte "ballot slip" material, like the inputs */
 .composer-box {
   border-radius: 0.9rem;
@@ -328,6 +488,52 @@
   border-color: var(--color-brand);
   border-bottom-color: var(--color-brand);
   box-shadow: inset 0 2px 4px rgba(35, 85, 150, 0.08), 0 0 0 4px var(--color-brand-tint);
+}
+
+/* One "post canvas" — the body text and the poll options share a single ballot
+   slip so the options read as continuation lines of the very same post, not a
+   separate widget. The bare composer drops its own frame to blend in. */
+.post-canvas {
+  border-radius: 0.9rem;
+  padding: 0.9rem 1rem;
+  background: linear-gradient(180deg, #eef4fb 0%, #ffffff 55%);
+  border: 1px solid rgba(120, 160, 210, 0.55);
+  border-bottom: 2.5px solid rgba(90, 130, 180, 0.6);
+  box-shadow: inset 0 2px 4px rgba(35, 85, 150, 0.1);
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+.post-canvas:focus-within {
+  border-color: var(--color-brand);
+  border-bottom-color: var(--color-brand);
+  box-shadow: inset 0 2px 4px rgba(35, 85, 150, 0.08), 0 0 0 4px var(--color-brand-tint);
+}
+/* Bare composer grows to fill the post canvas so the composer stretches to fill
+   its card — the editable body absorbs any slack height. */
+.composer-bare { display: flex; flex-direction: column; flex: 1 1 auto; padding: 0; border: none; background: none; box-shadow: none; }
+.composer-bare .composer-input { flex: 1 1 auto; min-height: 6rem; }
+
+/* Poll option — a tactile white "ballot slip" tile that clearly floats off the
+   canvas. Lifts on hover; its edge lights up brand-blue while focused. */
+.option-row {
+  background: linear-gradient(180deg, #ffffff 0%, #eef6ff 100%);
+  border: 1.5px solid rgba(120, 160, 210, 0.65);
+  box-shadow: inset 0 1px 0 #fff, 0 3px 11px -4px rgba(35, 85, 150, 0.5);
+  transition: border-color 0.15s ease, box-shadow 0.15s ease, transform 0.12s ease;
+}
+.option-row:hover { transform: translateY(-1px); box-shadow: inset 0 1px 0 #fff, 0 9px 20px -6px rgba(35, 85, 150, 0.6); }
+.option-row:focus-within {
+  border-color: var(--color-brand);
+  box-shadow: inset 0 1px 0 #fff, 0 0 0 3px var(--color-brand-tint), 0 7px 18px -5px rgba(17, 133, 254, 0.55);
+}
+
+/* Glossy blue "gel" number chip on each option — a mini of the cast button. */
+.poll-num {
+  color: #fff;
+  text-shadow: 0 1px 1px rgba(4, 40, 100, 0.45);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.65) 0%, rgba(255, 255, 255, 0.06) 47%, rgba(255, 255, 255, 0) 49%, rgba(255, 255, 255, 0.08) 100%),
+    linear-gradient(180deg, #5aabff 0%, #1685fe 52%, #085ec6 100%);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.85), inset 0 -2px 3px rgba(6, 55, 130, 0.45), 0 2px 6px -1px rgba(10, 90, 200, 0.55);
 }
 .composer-input { outline: none; min-height: 7rem; font-size: 1.05rem; line-height: 1.5; color: var(--color-ink); }
 .composer-input p { margin: 0 0 0.5rem; }
@@ -362,8 +568,79 @@
   100% { transform: scale(3.4); opacity: 0; }
 }
 
+/* ---- Balloon help (CSS tooltips) ------------------------------------------
+   Any element with a non-empty `data-tip` grows a little cloud-balloon on hover
+   or keyboard focus. Pure attribute + CSS, so it works identically in .astro
+   markup and Preact islands. Default balloon floats above; add
+   data-tip-side="bottom" for elements near the top edge. */
+[data-tip]:not([data-tip=""]) { position: relative; }
+[data-tip]:not([data-tip=""])::after,
+[data-tip]:not([data-tip=""])::before {
+  position: absolute;
+  left: 50%;
+  opacity: 0;
+  pointer-events: none;
+  z-index: 70;
+  transition: opacity 0.16s ease, transform 0.16s ease;
+}
+[data-tip]:not([data-tip=""])::after {
+  content: attr(data-tip);
+  bottom: calc(100% + 0.55rem);
+  width: max-content;
+  max-width: 15rem;
+  padding: 0.45rem 0.7rem;
+  border-radius: 0.85rem;
+  font-family: var(--font-body);
+  font-size: 0.72rem;
+  font-weight: 600;
+  line-height: 1.32;
+  letter-spacing: 0;
+  text-align: center;
+  white-space: normal;
+  color: var(--color-brand-ink);
+  background: linear-gradient(180deg, #ffffff, #e9f2ff);
+  border: 1px solid rgba(150, 185, 220, 0.7);
+  box-shadow: var(--shadow-cloud);
+  transform: translate(-50%, 0.25rem);
+}
+[data-tip]:not([data-tip=""])::before { /* balloon tail */
+  content: "";
+  bottom: calc(100% + 0.24rem);
+  width: 0.7rem;
+  height: 0.7rem;
+  background: #e9f2ff;
+  border-right: 1px solid rgba(150, 185, 220, 0.7);
+  border-bottom: 1px solid rgba(150, 185, 220, 0.7);
+  border-radius: 0 0 0.16rem 0;
+  transform: translate(-50%, 0.25rem) rotate(45deg);
+}
+[data-tip]:not([data-tip=""]):hover::after,
+[data-tip]:not([data-tip=""]):focus-visible::after,
+[data-tip]:not([data-tip=""]):hover::before,
+[data-tip]:not([data-tip=""]):focus-visible::before { opacity: 1; }
+[data-tip]:not([data-tip=""]):hover::after,
+[data-tip]:not([data-tip=""]):focus-visible::after { transform: translate(-50%, 0); }
+[data-tip]:not([data-tip=""]):hover::before,
+[data-tip]:not([data-tip=""]):focus-visible::before { transform: translate(-50%, 0) rotate(45deg); }
+
+/* Side variant: balloon below the element (for things near the top edge). */
+[data-tip-side="bottom"]:not([data-tip=""])::after { bottom: auto; top: calc(100% + 0.55rem); }
+[data-tip-side="bottom"]:not([data-tip=""])::before {
+  bottom: auto;
+  top: calc(100% + 0.24rem);
+  border: none;
+  border-left: 1px solid rgba(150, 185, 220, 0.7);
+  border-top: 1px solid rgba(150, 185, 220, 0.7);
+  border-radius: 0.16rem 0 0 0;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .cloud, .drift, .tilt, .stamping, .stamp-ripple, .stamp { animation: none !important; }
   .tilt { transform: none !important; }
   .stamp-ripple { display: none; }
+  [data-tip]::after, [data-tip]::before { transition: opacity 0.16s ease !important; }
+  /* Instant flip (no disorienting spin), and no visibility delay/overlap. */
+  .flip { transition: none; }
+  .flip-front, .flip-back,
+  .flip.is-flipped .flip-front, .flip.is-flipped .flip-back { transition: none !important; }
 }

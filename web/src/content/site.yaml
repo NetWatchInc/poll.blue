@@ -1,0 +1,101 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# poll.blue — site copy
+#
+# All user-facing text for the static pages lives here. Edit the words below;
+# the pages read this file at build time. This is a STATIC site, so after
+# changing anything here run `npm run build` (or redeploy) to see it live.
+#
+# Notes for editing:
+#   • `>-` starts a folded block: write across multiple indented lines and they
+#     join into one paragraph (handy for long sentences).
+#   • Quote any value that starts with @, and keep the indentation as-is.
+# ─────────────────────────────────────────────────────────────────────────────
+
+# Default <title> / meta description. Pages that don't set their own fall back
+# to these (the home page uses them).
+site:
+  title: poll.blue — polls for the Atmosphere
+  description: >-
+    Create polls on Bluesky. Sign in with your account, post a poll, and watch
+    the results roll in.
+
+# Shared header / footer chrome.
+nav:
+  createLink: Create a poll
+  mineLink: My polls
+footer:
+  creditPrefix: poll.blue — run by
+  creditLabel: "@shreyanjain.net"
+  creditHref: https://bsky.app/profile/did:plc:bnqkww7bjxaacajzvu5gswdf
+  tagline: Made for the Atmosphere.
+
+# ── Home page ────────────────────────────────────────────────────────────────
+home:
+  pill: Polls, for the Atmosphere.
+  # The headline renders as two lines; the accent line is colored.
+  heroTitleLead: Ask Bluesky
+  heroTitleAccent: anything.
+  heroSubtitle: Spin up a poll in seconds and post it straight to your Bluesky feed.
+  ctaPrimary: Create a poll
+  ctaSecondary: See how it works
+
+  # The little live-looking demo card in the hero.
+  demo:
+    author: shreyanjain.net
+    via: via poll.blue
+    question: Are they called posts or skeets?
+    footer: 📊 1,204 votes · ends in 18h
+    options:
+      - label: Posts
+        pct: 27
+      - label: Skeets
+        pct: 73
+
+  # "How it works" section.
+  how:
+    title: Three taps to a live poll.
+    intro: >-
+      Your poll lives in a Bluesky post. poll.blue keeps track of the votes in
+      its own central database, and prints them prettily for you!
+    steps:
+      - n: "01"
+        title: Sign in through the Atmosphere
+        body: >-
+          No new accounts needed. The existing handle you use on Bluesky and
+          other Atmospheric apps works here.
+      - n: "02"
+        title: Write your question
+        body: >-
+          Up to four options. We compose a clean, tappable poll post and publish
+          it straight to your own account.
+      - n: "03"
+        title: Watch it roll in
+        body: >-
+          Each option is a link people tap to vote. Live tallies, a shareable
+          results page, and an automatic recap after 24 hours.
+
+  # Closing call-to-action card.
+  finalCta:
+    title: Ready when you are.
+    body: C'mon, press the button. I know you want to. Post some cursed question. Please.
+    button: Create your first poll
+
+# ── Create page ──────────────────────────────────────────────────────────────
+create:
+  title: Create a poll — poll.blue
+  description: Post a poll to Bluesky from your own account.
+  heading: Create a poll
+  subtitle: >-
+    All it takes is a question, an Atmosphere account, and the will to post.
+    Go on, try it.
+
+# ── My polls page ────────────────────────────────────────────────────────────
+mine:
+  title: My polls — poll.blue
+  heading: My polls
+  subtitle: Manage Atmosphere-native polls you've created. Votes in anonymous polls won't show up here. 
+
+# ── Results page ─────────────────────────────────────────────────────────────
+results:
+  title: Poll results — poll.blue
+  makeYourOwn: Make your own poll →

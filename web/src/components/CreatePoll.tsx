@@ -3,9 +3,10 @@ import { useStore } from "@nanostores/preact";
 import { $account, $authReady, getAgent, initSession, signIn } from "../lib/session";
 import { makeRpc } from "../lib/oauth";
 import { composedText, generateId, generatePollText, graphemeLen, postUriToBskyLink } from "../lib/poll";
-import { type Audience, clearPendingVote, createPublicPoll, getPendingVote, listRecords } from "../lib/atpoll";
+import { type Audience, clearPendingVote, createCentralizedPollRecord, createPublicPoll, getPendingVote, listRecords, POLL_SPEC } from "../lib/atpoll";
 import { detectFacets } from "../lib/richtext";
 import Composer from "./Composer";
+import FlipCard from "./FlipCard";
 
 const EMOJI = ["1️⃣", "2️⃣", "3️⃣", "4️⃣", "5️⃣", "6️⃣", "7️⃣", "8️⃣", "9️⃣", "🔟"];
 const MAX_OPTIONS = 10;
@@ -23,6 +24,38 @@ const DURATIONS: { key: string; label: string; ms: number }[] = [
 
 interface Img { file: File; alt: string; url: string }
 
+// The one choice that actually matters to a normal user: are the voters' votes
+// public or private? Everything technical (on-network records vs centralized
+// tally, per-account dedup, sealing) follows from that. Public voting is the new
+// on-network path and is still alpha.
+type Privacy = "public" | "private";
+const PRIVACY_OPTIONS: { key: Privacy; icon: string; title: string; alpha: boolean; blurb: string }[] = [
+  { key: "public", icon: "🌐", title: "Public votes", alpha: true, blurb: "Everyone can see who voted for what. Each vote is a signed record on the voter's own Bluesky account." },
+  { key: "private", icon: "🕶️", title: "Private votes", alpha: false, blurb: "No one can see how anyone voted. No sign-in needed — poll.blue counts them, one per person." },
+];
+
+// Plain-language tradeoffs, shown on demand under the two choices.
+const PRIVACY_DETAILS: { key: Privacy; pros: string[] }[] = [
+  { key: "public", pros: [
+    "Anyone can recount it themselves — no need to trust poll.blue",
+    "One vote per account (voters sign in with Bluesky)",
+    "The catch: everyone can see how each person voted",
+    "Optional secret ballot hides results until the poll closes",
+  ] },
+  { key: "private", pros: [
+    "No account or sign-in needed to vote — just tap",
+    "Individual votes are never shown to anyone",
+    "Counted by poll.blue (one per person, best-effort)",
+    "The catch: you can't independently verify the tally",
+  ] },
+];
+
+function AlphaTag() {
+  return (
+    <span class="rounded-full bg-amber-100 px-1.5 py-0.5 text-[0.58rem] font-extrabold uppercase tracking-wider text-amber-700">Alpha</span>
+  );
+}
+
 export default function CreatePoll() {
   const account = useStore($account);
   const ready = useStore($authReady);
@@ -30,8 +63,10 @@ export default function CreatePoll() {
   const [body, setBody] = useState("");
   const [options, setOptions] = useState(["", "", ""]);
   const [images, setImages] = useState<Img[]>([]);
+  const [showImages, setShowImages] = useState(false);
   const [replyTo, setReplyTo] = useState("");
   const [showAdvanced, setShowAdvanced] = useState(false);
+  const [showCompare, setShowCompare] = useState(false);
   const [recording, setRecording] = useState<"network" | "legacy">("network");
   const [results, setResults] = useState<"live" | "sealed">("live");
   const [duration, setDuration] = useState("none");
@@ -49,6 +84,15 @@ export default function CreatePoll() {
   const removeOption = (i: number) => { if (options.length > 2) setOptions(options.filter((_, j) => j !== i)); };
   const chooseResults = (r: "live" | "sealed") => { setResults(r); if (r === "sealed" && duration === "none") setDuration("24h"); };
   const sealedMode = recording === "network" && results === "sealed";
+
+  // "Public vs private" is derived from the recording mode; choosing it just sets
+  // the underlying knobs, so post() and the record shapes are unchanged. Secret
+  // ballot is a refinement of public voting (results sealed until close).
+  const privacy: Privacy = recording === "network" ? "public" : "private";
+  function choosePrivacy(p: Privacy) {
+    if (p === "public") setRecording("network");
+    else { setRecording("legacy"); setResults("live"); setGate("none"); }
+  }
 
   function addImages(files: FileList | null) {
     if (!files) return;
@@ -185,17 +229,27 @@ export default function CreatePoll() {
         setResult({ postUri, visibleId: id });
       } else {
         const visibleId = generateId(6);
-        const { uri } = await createPost(visibleId);
+        const post = await createPost(visibleId);
+        // Also drop a manage-able record in the creator's repo so this anonymous
+        // poll shows up in My Polls (best-effort — the poll works either way, it
+        // just won't be manageable if this write fails).
+        let bluePollUri: string | undefined;
+        try {
+          const { uri } = await createCentralizedPollRecord(rpc, agent.sub, {
+            question: bodyText, answers: activeOptions, visibleId, post,
+          });
+          bluePollUri = uri;
+        } catch { /* not fatal — poll is still live and tallied centrally */ }
         const resp = await fetch("/api/poll/register", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ question: bodyText, answers: activeOptions, visible_id: visibleId, post_uri: uri }),
+          body: JSON.stringify({ question: bodyText, answers: activeOptions, visible_id: visibleId, post_uri: post.uri, blue_poll_uri: bluePollUri }),
         });
         if (!resp.ok) {
           const j = await resp.json().catch(() => ({}));
           throw new Error(typeof j.error === "string" ? j.error : "Failed to register the poll.");
         }
-        setResult({ postUri: uri, visibleId });
+        setResult({ postUri: post.uri, visibleId });
       }
     } catch (e) {
       setError((e as Error).message || "Something went wrong.");
@@ -207,7 +261,7 @@ export default function CreatePoll() {
   function reset() {
     setResult(null); setBody(""); setOptions(["", "", ""]); setReplyTo("");
     images.forEach((im) => URL.revokeObjectURL(im.url));
-    setImages([]); setResults("live"); setDuration("none"); setGate("none"); setListUri("");
+    setImages([]); setShowImages(false); setResults("live"); setDuration("none"); setGate("none"); setListUri("");
   }
 
   /* ---------- render ---------- */
@@ -229,7 +283,7 @@ export default function CreatePoll() {
           <svg width="26" height="26" viewBox="0 0 24 24" fill="none"><path d="M5 13l4 4L19 7" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" /></svg>
         </div>
         <h2 class="mt-5 text-3xl">Poll posted!</h2>
-        <p class="mt-2 text-[var(--color-ink-soft)]">It's live on your account. Share it and watch the votes land.</p>
+        <p class="mt-2 text-[var(--color-ink-soft)]">Your poll is live in the Atmosphere! Watch the votes land here.</p>
         <div class="mt-7 flex flex-wrap justify-center gap-3">
           <a class="btn btn-primary" href={`/p/${result.visibleId}`}>View results</a>
           <a class="btn btn-ghost" href={postUriToBskyLink(result.postUri)} target="_blank" rel="noreferrer">Open on Bluesky</a>
@@ -259,7 +313,7 @@ export default function CreatePoll() {
   return (
     <div class="rise grid gap-6 lg:grid-cols-[1.15fr_0.85fr]">
       {/* ---- Composer (main) ---- */}
-      <div class="card p-6 sm:p-7">
+      <div class="card flex flex-col p-6 sm:p-7">
         <div class="flex items-center gap-3">
           {account.avatar
             ? <img src={account.avatar} alt="" width={40} height={40} class="h-10 w-10 rounded-full object-cover" />
@@ -270,40 +324,19 @@ export default function CreatePoll() {
           </div>
         </div>
 
-        <div class="mt-4">
-          <Composer value={body} onChange={setBody} placeholder="Ask something… @mentions, #tags and links become facets." />
-        </div>
+        {/* One post canvas: the question and the poll options live together, so
+            the options read as continuation lines of the very same post. */}
+        <div class="mt-4 post-canvas flex flex-1 flex-col">
+          <Composer bare value={body} onChange={setBody} placeholder="Are they called skeets, posts, skoot, bleets, or something else?" />
 
-        {/* images */}
-        <div class="mt-3 flex flex-wrap gap-3">
-          {images.map((im, i) => (
-            <div class="w-24">
-              <div class="relative">
-                <img src={im.url} alt="" class="h-24 w-24 rounded-xl object-cover" style="box-shadow: var(--shadow-cloud)" />
-                <button type="button" onClick={() => removeImage(i)} aria-label="Remove image"
-                  class="absolute -right-2 -top-2 grid h-6 w-6 place-items-center rounded-full bg-white text-red-600 shadow">✕</button>
-              </div>
-              <input class="field mt-1.5 !rounded-lg !py-1 text-xs" placeholder="alt text" value={im.alt}
-                onInput={(e) => updateAlt(i, (e.target as HTMLInputElement).value)} />
-            </div>
-          ))}
-          {images.length < MAX_IMAGES && (
-            <label class="grid h-24 w-24 cursor-pointer place-items-center rounded-xl border-2 border-dashed text-2xl text-[var(--color-ink-faint)] transition-colors hover:border-[var(--color-brand)] hover:text-[var(--color-brand-deep)]" style="border-color: var(--color-line)">
-              +
-              <input type="file" accept="image/*" multiple class="hidden" onChange={(e) => { addImages((e.target as HTMLInputElement).files); (e.target as HTMLInputElement).value = ""; }} />
-            </label>
-          )}
-        </div>
-
-        {/* Poll block — edited in place, rendered like the final post */}
-        <div class="mt-4 rounded-2xl border p-3.5" style="border-color: var(--color-line); background: linear-gradient(180deg,#ffffff,#f5f9fe)">
-          <p class="mb-1.5 ml-2 text-[0.62rem] font-bold uppercase tracking-widest text-[var(--color-ink-faint)]">Poll</p>
-          <div class="space-y-0.5">
+          <div class="mt-3 space-y-2.5">
             {options.map((opt, i) => (
-              <div class="group flex items-center gap-2.5 rounded-xl px-2 py-1.5 transition-colors hover:bg-[var(--color-paper-2)]">
-                <span class="select-none text-lg">{EMOJI[i]}</span>
+              // A <label> so a click anywhere on the row (number, padding) lands
+              // the cursor in the text field.
+              <label class="option-row group flex items-center gap-3.5 rounded-2xl px-3.5 py-3">
+                <span class="poll-num grid h-9 w-9 shrink-0 select-none place-items-center rounded-full font-display text-base font-extrabold leading-none">{i + 1}</span>
                 <input
-                  class="min-w-0 flex-1 bg-transparent text-[0.98rem] font-medium outline-none placeholder:font-normal placeholder:text-[var(--color-ink-faint)]"
+                  class="min-w-0 flex-1 bg-transparent text-base font-semibold outline-none placeholder:font-normal placeholder:text-[var(--color-ink-faint)]"
                   type="text"
                   maxLength={50}
                   placeholder={`Option ${i + 1}`}
@@ -312,120 +345,214 @@ export default function CreatePoll() {
                 />
                 {options.length > 2 && (
                   <button type="button" onClick={() => removeOption(i)} aria-label={`Remove option ${i + 1}`}
-                    class="shrink-0 text-[var(--color-ink-faint)] opacity-0 transition-opacity hover:text-red-600 group-hover:opacity-100">✕</button>
+                    class="hit grid h-7 w-7 shrink-0 place-items-center rounded-full text-[var(--color-ink-faint)] opacity-0 transition-all hover:bg-red-50 hover:text-red-600 group-hover:opacity-100">✕</button>
                 )}
-              </div>
+              </label>
             ))}
           </div>
-          <div class="mt-1 flex items-center gap-4 pl-2">
-            {options.length < MAX_OPTIONS && (
-              <button type="button" class="text-sm font-semibold text-[var(--color-brand-deep)] hover:underline" onClick={addOption}>+ Add option</button>
-            )}
-          </div>
-          <p class="mt-2 ml-2 text-sm font-medium text-[var(--color-brand-deep)]">📊 Show results</p>
+          {options.length < MAX_OPTIONS && (
+            <button type="button" onClick={addOption}
+              class="mt-2.5 flex w-full items-center justify-center gap-2 rounded-2xl border-2 border-dashed border-[var(--color-line)] py-3 text-sm font-bold text-[var(--color-brand-deep)] transition-colors hover:border-[var(--color-brand)] hover:bg-[var(--color-brand-tint)]">
+              <span class="poll-num grid h-6 w-6 place-items-center rounded-full text-base font-extrabold leading-none">+</span>
+              Add option
+            </button>
+          )}
+          <p class="mt-3 px-1 text-sm font-semibold text-[var(--color-brand-deep)]">📊 Show results</p>
         </div>
 
-        <div class="mt-5 flex items-center gap-4">
-          <button class="btn btn-primary" disabled={!canPost || busy} onClick={post}>{busy ? "Posting…" : "Post poll"}</button>
-          <span class={`text-sm font-semibold ${over ? "text-red-600" : "text-[var(--color-ink-faint)]"}`}>{postLen}/{MAX_GRAPHEMES}</span>
+        {/* Photos, tucked into a drawer — most polls don't need one. */}
+        <div class="mt-3">
+          <button type="button" onClick={() => setShowImages((v) => !v)} aria-expanded={showImages}
+            class="inline-flex items-center gap-2 rounded-full border-2 px-4 py-2 text-sm font-bold text-[var(--color-ink-soft)] transition-colors hover:border-[var(--color-brand)] hover:text-[var(--color-brand-deep)]"
+            style={`border-color:${showImages || images.length ? "var(--color-brand)" : "var(--color-line)"}; background:${showImages || images.length ? "var(--color-brand-tint)" : "transparent"}`}>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <rect x="3" y="5" width="18" height="14" rx="2.5" stroke="currentColor" stroke-width="1.8" />
+              <circle cx="8.5" cy="10" r="1.6" stroke="currentColor" stroke-width="1.8" />
+              <path d="M4 17l4.5-4.5 4 4L16 13l4 4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" />
+            </svg>
+            Photos
+            {images.length > 0 && (
+              <span class="grid h-4 min-w-4 place-items-center rounded-full bg-[var(--color-brand)] px-1 text-[0.65rem] font-bold text-white">{images.length}</span>
+            )}
+            <span class="text-[var(--color-ink-faint)]">{showImages ? "▲" : "▾"}</span>
+          </button>
+
+          {showImages && (
+            <div class="mt-3 flex flex-wrap gap-3 rounded-2xl border p-3.5" style="border-color: var(--color-line); background: linear-gradient(180deg,#ffffff,#f5f9fe)">
+              {images.map((im, i) => (
+                <div class="w-24">
+                  <div class="relative">
+                    <img src={im.url} alt="" class="h-24 w-24 rounded-xl object-cover" style="box-shadow: var(--shadow-cloud)" />
+                    <button type="button" onClick={() => removeImage(i)} aria-label="Remove image"
+                      class="absolute -right-2 -top-2 grid h-6 w-6 place-items-center rounded-full bg-white text-red-600 shadow">✕</button>
+                  </div>
+                  <input class="field mt-1.5 !rounded-lg !py-1 text-xs" placeholder="alt text" value={im.alt}
+                    onInput={(e) => updateAlt(i, (e.target as HTMLInputElement).value)} />
+                </div>
+              ))}
+              {images.length < MAX_IMAGES && (
+                <label class="grid h-24 w-24 cursor-pointer place-items-center rounded-xl border-2 border-dashed text-2xl text-[var(--color-ink-faint)] transition-colors hover:border-[var(--color-brand)] hover:text-[var(--color-brand-deep)]" style="border-color: var(--color-line)">
+                  +
+                  <input type="file" accept="image/*" multiple class="hidden" onChange={(e) => { addImages((e.target as HTMLInputElement).files); (e.target as HTMLInputElement).value = ""; }} />
+                </label>
+              )}
+              {images.length === 0 && (
+                <p class="grid h-24 flex-1 place-items-center px-2 text-center text-sm text-[var(--color-ink-faint)]">Add up to {MAX_IMAGES} — optional, but nice for context.</p>
+              )}
+            </div>
+          )}
+        </div>
+
+        <div class="mt-6 flex items-center gap-4">
+          <button class="btn btn-primary !px-8 !py-3.5 text-base" disabled={!canPost || busy} onClick={post}>
+            {busy ? "Posting…" : "Post poll"}
+            {!busy && (
+              <svg width="19" height="19" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <path d="M4 12h14M12 5l7 7-7 7" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round" />
+              </svg>
+            )}
+          </button>
+          <span class={`rounded-full px-3 py-1 text-sm font-bold ${over ? "bg-red-50 text-red-600" : "text-[var(--color-ink-faint)]"}`}>{postLen}/{MAX_GRAPHEMES}</span>
           {!canPost && !over && <span class="text-sm text-[var(--color-ink-faint)]">Add a question and 2+ options.</span>}
         </div>
         {error && <p class="mt-4 text-sm font-medium text-red-600">{error}</p>}
       </div>
 
       {/* ---- Settings (sidebar) ---- */}
-      <div class="card p-6 sm:p-7">
-        <span class="pill">Poll setup</span>
-
-        <p class="mt-5 text-sm font-semibold text-[var(--color-ink-soft)]">How votes are recorded</p>
-        <div class="mt-2 grid gap-2">
-          {([
-            { key: "network", title: "On the network", blurb: "A record on each voter's account — verifiable, one per account, gate-able." },
-            { key: "legacy", title: "Anonymous · legacy", blurb: "Link voting, no sign-in, tallied centrally. Can't be gated or sealed." },
-          ] as const).map((v) => {
-            const active = recording === v.key;
-            return (
-              <button type="button" onClick={() => setRecording(v.key)} class="rounded-xl border p-3 text-left transition-colors"
-                style={`border-color:${active ? "var(--color-brand)" : "var(--color-line)"}; background:${active ? "var(--color-brand-tint)" : "transparent"}`}>
-                <span class="flex items-center gap-2 text-sm font-semibold">
-                  <span class="grid h-3.5 w-3.5 place-items-center rounded-full border" style={`border-color:${active ? "var(--color-brand)" : "var(--color-ink-faint)"}`}>
-                    {active && <span class="h-1.5 w-1.5 rounded-full" style="background: var(--color-brand)"></span>}
-                  </span>{v.title}
-                </span>
-                <span class="mt-1 block text-xs leading-snug text-[var(--color-ink-soft)]">{v.blurb}</span>
-              </button>
-            );
-          })}
-        </div>
-
-        {recording === "network" && (
+      <FlipCard
+        frontClass="card p-6 sm:p-7"
+        backClass="card p-6 sm:p-7"
+        infoLabel="What this writes"
+        front={() => (
           <>
-            <p class="mt-6 text-sm font-semibold text-[var(--color-ink-soft)]">Results</p>
-            <div class="mt-2 grid grid-cols-2 gap-2">
-              {([
-                { key: "live", title: "Live", blurb: "Running tally." },
-                { key: "sealed", title: "🔒 Sealed", blurb: "Hidden until close." },
-              ] as const).map((r) => {
-                const active = results === r.key;
+            <span class="pill">Poll setup</span>
+
+            <p class="mt-5 text-sm font-semibold text-[var(--color-ink-soft)]">Are votes public or private?</p>
+            <div class="mt-2 grid gap-2">
+              {PRIVACY_OPTIONS.map((t) => {
+                const active = privacy === t.key;
                 return (
-                  <button type="button" onClick={() => chooseResults(r.key)} class="rounded-xl border p-3 text-left transition-colors"
+                  <button type="button" onClick={() => choosePrivacy(t.key)} class="rounded-xl border p-3 text-left transition-colors"
                     style={`border-color:${active ? "var(--color-brand)" : "var(--color-line)"}; background:${active ? "var(--color-brand-tint)" : "transparent"}`}>
-                    <span class="text-sm font-semibold">{r.title}</span>
-                    <span class="mt-0.5 block text-xs leading-snug text-[var(--color-ink-soft)]">{r.blurb}</span>
+                    <span class="flex items-center gap-2 text-sm font-semibold">
+                      <span class="grid h-3.5 w-3.5 place-items-center rounded-full border" style={`border-color:${active ? "var(--color-brand)" : "var(--color-ink-faint)"}`}>
+                        {active && <span class="h-1.5 w-1.5 rounded-full" style="background: var(--color-brand)"></span>}
+                      </span>
+                      <span class="text-base leading-none">{t.icon}</span>
+                      {t.title}
+                      {t.alpha && <AlphaTag />}
+                    </span>
+                    <span class="mt-1 block text-xs leading-snug text-[var(--color-ink-soft)]">{t.blurb}</span>
                   </button>
                 );
               })}
             </div>
 
-            <p class="mt-6 text-sm font-semibold text-[var(--color-ink-soft)]">Who can vote</p>
-            <select class="field mt-2" value={gate} onChange={(e) => setGate((e.target as HTMLSelectElement).value as typeof gate)}>
-              <option value="none">Anyone</option>
-              <option value="followers">Only my followers</option>
-              <option value="list">Only people on a list</option>
-            </select>
-            {gate === "list" && (
-              myLists.length > 0 ? (
-                <select class="field mt-2" value={listUri} onChange={(e) => setListUri((e.target as HTMLSelectElement).value)}>
-                  <option value="">Choose one of your lists…</option>
-                  {myLists.map((l) => <option value={l.uri}>{l.name}</option>)}
-                </select>
-              ) : (
-                <p class="mt-2 text-sm text-[var(--color-ink-faint)]">No lists on your account yet — make one on Bluesky.</p>
-              )
+            <button class="mt-2 text-xs font-semibold text-[var(--color-brand-deep)] hover:underline" onClick={() => setShowCompare(!showCompare)}>
+              {showCompare ? "Hide the tradeoffs" : "How do these differ?"}
+            </button>
+            {showCompare && (
+              <div class="mt-2 grid gap-2.5">
+                {PRIVACY_DETAILS.map((d) => (
+                  <div class="rounded-xl border p-3" style="border-color: var(--color-line); background: var(--color-paper-2)">
+                    <p class="text-xs font-bold uppercase tracking-wide text-[var(--color-ink-soft)]">
+                      {PRIVACY_OPTIONS.find((o) => o.key === d.key)!.title}
+                    </p>
+                    <ul class="mt-1.5 space-y-1">
+                      {d.pros.map((p) => (
+                        <li class="flex gap-1.5 text-xs leading-snug text-[var(--color-ink-soft)]">
+                          <span class="text-[var(--color-brand)]">·</span>{p}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                ))}
+              </div>
             )}
 
-            <p class="mt-6 text-sm font-semibold text-[var(--color-ink-soft)]">
-              Closes {sealedMode && <span class="font-normal text-[var(--color-ink-faint)]">(required)</span>}
-            </p>
-            <select class="field mt-2" value={duration} onChange={(e) => setDuration((e.target as HTMLSelectElement).value)}>
-              {DURATIONS.filter((d) => !sealedMode || d.key !== "none").map((d) => <option value={d.key}>{d.label}</option>)}
-            </select>
+            {privacy === "public" && (
+              <p class="mt-3 flex items-start gap-1.5 rounded-xl bg-amber-50 px-3 py-2 text-xs leading-snug text-amber-800">
+                <span aria-hidden="true">⚗️</span>
+                <span>Public (on-network) polling is in <strong>alpha</strong> — it writes new records to your Bluesky account and the format may still change.</span>
+              </p>
+            )}
+
+            {privacy === "public" && (
+              <>
+                <label class="mt-5 flex cursor-pointer items-start gap-2.5">
+                  <input type="checkbox" class="mt-0.5" checked={sealedMode} onChange={(e) => chooseResults((e.target as HTMLInputElement).checked ? "sealed" : "live")} />
+                  <span class="text-sm">
+                    <span class="font-semibold text-[var(--color-ink-soft)]">🔒 Secret ballot</span>
+                    <span class="mt-0.5 block text-xs leading-snug text-[var(--color-ink-faint)]">Keep the running tally hidden until the poll closes, then reveal it. Votes are timelock-encrypted.</span>
+                  </span>
+                </label>
+
+                <p class="mt-5 text-sm font-semibold text-[var(--color-ink-soft)]">
+                  Closes {sealedMode && <span class="font-normal text-[var(--color-ink-faint)]">(required)</span>}
+                </p>
+                <select class="field mt-2" value={duration} onChange={(e) => setDuration((e.target as HTMLSelectElement).value)}>
+                  {DURATIONS.filter((d) => !sealedMode || d.key !== "none").map((d) => <option value={d.key}>{d.label}</option>)}
+                </select>
+              </>
+            )}
+
+            <button class="mt-5 text-sm font-semibold text-[var(--color-ink-soft)] hover:text-[var(--color-brand-deep)]" onClick={() => setShowAdvanced(!showAdvanced)}>
+              {showAdvanced ? "− Fewer options" : "+ More options"}
+            </button>
+            {showAdvanced && (
+              <div class="mt-3 space-y-5">
+                {recording === "network" && (
+                  <div>
+                    <p class="text-sm font-semibold text-[var(--color-ink-soft)]">Limit who can vote</p>
+                    <select class="field mt-2" value={gate} onChange={(e) => setGate((e.target as HTMLSelectElement).value as typeof gate)}>
+                      <option value="none">Anyone can vote</option>
+                      <option value="followers">Only my followers</option>
+                      <option value="list">Only people on a list</option>
+                    </select>
+                    {gate === "list" && (
+                      myLists.length > 0 ? (
+                        <select class="field mt-2" value={listUri} onChange={(e) => setListUri((e.target as HTMLSelectElement).value)}>
+                          <option value="">Choose one of your lists…</option>
+                          {myLists.map((l) => <option value={l.uri}>{l.name}</option>)}
+                        </select>
+                      ) : (
+                        <p class="mt-2 text-sm text-[var(--color-ink-faint)]">No lists on your account yet — make one on Bluesky.</p>
+                      )
+                    )}
+                  </div>
+                )}
+                <div>
+                  <p class="text-sm font-semibold text-[var(--color-ink-soft)]">Reply to a post <span class="font-normal text-[var(--color-ink-faint)]">(optional)</span></p>
+                  <input class="field mt-2" type="text" maxLength={300} placeholder="https://bsky.app/profile/…/post/…  or  at://…" value={replyTo}
+                    onInput={(e) => setReplyTo((e.target as HTMLInputElement).value)} />
+                </div>
+              </div>
+            )}
+
           </>
         )}
-
-        <button class="mt-5 text-sm font-semibold text-[var(--color-ink-soft)] hover:text-[var(--color-brand-deep)]" onClick={() => setShowAdvanced(!showAdvanced)}>
-          {showAdvanced ? "− Hide" : "+ Reply to a post"} (optional)
-        </button>
-        {showAdvanced && (
-          <input class="field mt-3" type="text" maxLength={300} placeholder="https://bsky.app/profile/…/post/…  or  at://…" value={replyTo}
-            onInput={(e) => setReplyTo((e.target as HTMLInputElement).value)} />
+        back={() => (
+          <>
+            <h2 class="text-2xl">What this writes</h2>
+            <p class="mt-2 text-sm text-[var(--color-ink-soft)]">Where your poll and its votes live on the network.</p>
+            <div class="mt-4 space-y-2 text-sm text-[var(--color-ink-soft)] tech-details !border-t-0">
+              {recording === "network" ? (
+                <>
+                  <p>A <code>blue.poll.poll.poll</code> record in your repo{!sealedMode ? <> + a <code>blue.poll.poll.option</code> per option</> : null}, plus an <code>app.bsky.feed.post</code>{images.length ? " with images" : ""}.</p>
+                  <p>Each vote → a <code>blue.poll.poll.vote</code> in the voter's own repo.</p>
+                  <p>Tally: {sealedMode ? "drand timelock — encrypted until close." : "Constellation backlink counts."}</p>
+                </>
+              ) : (
+                <>
+                  <p>Posts an <code>app.bsky.feed.post</code> and registers the poll in poll.blue's central database (votes counted there — one per person, by IP).</p>
+                  <p>Also writes a <code>blue.poll.poll.poll</code> record (mode <code>centralized</code>) to your repo so the poll appears in <a class="text-[var(--color-brand-deep)] hover:underline" href="/mine">My Polls</a>, where you can delete it.</p>
+                </>
+              )}
+              <p>Every <code>blue.poll.*</code> record is stamped <code>spec: {POLL_SPEC}</code>.</p>
+            </div>
+          </>
         )}
-
-        <details class="tech-details mt-6 pt-4 text-sm">
-          <summary class="cursor-pointer font-semibold text-[var(--color-brand-deep)] select-none">🔎 What this writes</summary>
-          <div class="mt-3 space-y-1.5 text-[var(--color-ink-soft)]">
-            {recording === "network" ? (
-              <>
-                <p>A <code>blue.poll.poll.poll</code> record in your repo{!sealedMode ? <> + a <code>blue.poll.poll.option</code> per option</> : null}, plus an <code>app.bsky.feed.post</code>{images.length ? " with images" : ""}.</p>
-                <p>Each vote → a <code>blue.poll.poll.vote</code> in the voter's own repo.</p>
-                <p>Tally: {sealedMode ? "drand timelock — encrypted until close." : "Constellation backlink counts."}</p>
-              </>
-            ) : (
-              <p>Posts an <code>app.bsky.feed.post</code> and registers the poll in poll.blue's central database.</p>
-            )}
-          </div>
-        </details>
-      </div>
+      />
     </div>
   );
 }

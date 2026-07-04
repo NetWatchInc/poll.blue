@@ -49,9 +49,12 @@ interface Props {
   value: string;
   onChange: (text: string) => void;
   placeholder?: string;
+  // Drop the composer's own ballot-slip frame so it can sit inside a shared
+  // container (e.g. the post canvas that also holds the poll options).
+  bare?: boolean;
 }
 
-export default function Composer({ value, onChange, placeholder }: Props) {
+export default function Composer({ value, onChange, placeholder, bare }: Props) {
   const ref = useRef<HTMLDivElement>(null);
   const edRef = useRef<Editor | null>(null);
   const onChangeRef = useRef(onChange);
@@ -83,5 +86,5 @@ export default function Composer({ value, onChange, placeholder }: Props) {
   // changes via onUpdate. Do NOT setContent() from `value` on every render; that
   // fights the cursor and glitches typing. Resets happen by remounting (New poll).
 
-  return <div ref={ref} class="composer-box"></div>;
+  return <div ref={ref} class={bare ? "composer-bare" : "composer-box"}></div>;
 }

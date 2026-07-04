@@ -11,8 +11,12 @@ CREATE TABLE IF NOT EXISTS polls (
   visible_id     varchar(16) NOT NULL UNIQUE,
   created_at     timestamptz NOT NULL DEFAULT now(),
   results_posted boolean NOT NULL DEFAULT true,
-  user_agent     varchar(100) NOT NULL DEFAULT 'poll.blue'
+  user_agent     varchar(100) NOT NULL DEFAULT 'poll.blue',
+  blue_poll_uri  varchar(200)             -- at-uri of the creator's manage-able poll record (anonymous polls)
 );
+
+-- Existing production DBs: add the manage-able-record column if missing.
+ALTER TABLE polls ADD COLUMN IF NOT EXISTS blue_poll_uri varchar(200);
 
 CREATE TABLE IF NOT EXISTS votes (
   id      integer GENERATED ALWAYS AS IDENTITY PRIMARY KEY,

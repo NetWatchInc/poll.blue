@@ -19,6 +19,11 @@ export const POLL_NSID = "blue.poll.poll.poll";
 export const OPTION_NSID = "blue.poll.poll.option";
 export const VOTE_NSID = "blue.poll.poll.vote";
 
+// The blue.poll.* lexicon suite (native on-network polling) is still alpha. Every
+// record we publish carries this spec/version string so downstream consumers can
+// see which revision produced it and that the schema may still change.
+export const POLL_SPEC = "blue.poll@0.1.0-alpha";
+
 // The countable per-option target is env-independent (always the prod domain) so
 // tallies are stable no matter where a vote was cast. The clickable links in the
 // Bluesky post use the live origin (so dev works); the two are decoupled.
@@ -90,18 +95,19 @@ export async function createPublicPoll(
 ): Promise<PublicPoll> {
   const mode = poll.mode ?? "public";
   const sealed = mode === "sealed";
-  const pollRkey = randomRkey();
+  const pollRkey = nextTid();
   const id = encodePublicId(did, pollRkey);
   const pollUri = pollAtUri(did, pollRkey);
   const createdAt = new Date().toISOString();
 
   // Public polls give each option its own record (an at-uri backlink target for
   // per-option counting). Sealed polls hide the choice, so they don't need them.
-  const optionRkeys = sealed ? [] : poll.answers.map(() => randomRkey());
+  const optionRkeys = sealed ? [] : poll.answers.map(() => nextTid());
   const optionUris = optionRkeys.map((rk) => `at://${did}/${OPTION_NSID}/${rk}`);
 
   const record: Record<string, unknown> = {
     $type: POLL_NSID,
+    spec: POLL_SPEC,
     question: poll.question,
     options: sealed
       ? poll.answers.map((text) => ({ text }))
@@ -120,7 +126,7 @@ export async function createPublicPoll(
       $type: "com.atproto.repo.applyWrites#create",
       collection: OPTION_NSID,
       rkey: rk,
-      value: { $type: OPTION_NSID, text: poll.answers[i], index: i + 1, poll: pollUri, createdAt },
+      value: { $type: OPTION_NSID, spec: POLL_SPEC, text: poll.answers[i], index: i + 1, poll: pollUri, createdAt },
     })),
   ];
   const created = await rpc.post("com.atproto.repo.applyWrites", { input: { repo: did, writes } });
@@ -144,6 +150,46 @@ export async function createPublicPoll(
   return { id, postUri: post.uri };
 }
 
+/** Write a lightweight poll record to the creator's repo for a *centralized*
+ *  (anonymous, IP-tallied) poll. Votes are still counted by the poll.blue
+ *  backend — this record exists only so the creator can see and manage the poll
+ *  from My Polls. It carries `visibleId` to link back to the DB poll, and is
+ *  never tallied via Constellation (options have no per-option at-uris). */
+export async function createCentralizedPollRecord(
+  rpc: Rpc,
+  did: string,
+  poll: { question: string; answers: string[]; visibleId: string; endsAt?: string; post?: { uri: string; cid: string } },
+): Promise<{ uri: string; rkey: string }> {
+  const rkey = nextTid();
+  const uri = pollAtUri(did, rkey);
+  const record = {
+    $type: POLL_NSID,
+    spec: POLL_SPEC,
+    question: poll.question,
+    options: poll.answers.map((text) => ({ text })),
+    mode: "centralized",
+    visibleId: poll.visibleId,
+    createdAt: new Date().toISOString(),
+    ...(poll.endsAt ? { endsAt: poll.endsAt } : {}),
+    ...(poll.post ? { post: poll.post } : {}),
+  };
+  const res = await rpc.post("com.atproto.repo.putRecord", {
+    input: { repo: did, collection: POLL_NSID, rkey, record },
+  });
+  if (!res.ok) throw new Error(res.data?.error ?? "Could not create the poll record.");
+  return { uri, rkey };
+}
+
+/** Delete a poll record from the creator's own repo (used when removing a poll).
+ *  For centralized polls this is the ownership proof the backend checks before
+ *  purging the DB row — only the repo owner can delete their record. */
+export async function deletePollRecord(rpc: Rpc, did: string, rkey: string): Promise<void> {
+  const res = await rpc.post("com.atproto.repo.deleteRecord", {
+    input: { repo: did, collection: POLL_NSID, rkey },
+  });
+  if (!res.ok) throw new Error(res.data?.error ?? "Could not delete the poll record.");
+}
+
 /** Record a vote for a public poll in the voter's repo. Overwrites any prior
  *  vote on this poll (deterministic rkey), so one vote per account. Native polls
  *  reference the chosen option's at-uri; old polls fall back to the legacy URL. */
@@ -161,6 +207,7 @@ export async function castVote(
     const ciphertext = await sealChoice(args.sealedRound, String(args.option));
     record = {
       $type: VOTE_NSID,
+      spec: POLL_SPEC,
       poll: { uri: args.pollUri, cid: args.pollCid },
       sealed: { ciphertext, round: args.sealedRound },
       createdAt,
@@ -168,6 +215,7 @@ export async function castVote(
   } else if (args.optionUri) {
     record = {
       $type: VOTE_NSID,
+      spec: POLL_SPEC,
       poll: { uri: args.pollUri, cid: args.pollCid },
       option: args.optionUri, // at-uri of the chosen option record
       index: args.option, // convenience: 1-based option number
@@ -177,6 +225,7 @@ export async function castVote(
     // Legacy poll (no option records): keep the old URL-target shape.
     record = {
       $type: VOTE_NSID,
+      spec: POLL_SPEC,
       subject: { uri: args.pollUri, cid: args.pollCid },
       option: args.option,
       optionLink: optionTarget(args.id, args.option),
@@ -187,6 +236,16 @@ export async function castVote(
     input: { repo: voterDid, collection: VOTE_NSID, rkey: voteRkey(args.pollUri), record },
   });
   if (!res.ok) throw new Error(res.data?.error ?? "Could not record your vote.");
+}
+
+/** Remove a voter's vote for a public poll (unvote) by deleting their vote
+ *  record. The rkey is deterministic per poll, so this always targets the one
+ *  vote they have on it. No-ops cleanly if the record is already gone. */
+export async function deleteVote(rpc: Rpc, voterDid: string, pollUri: string): Promise<void> {
+  const res = await rpc.post("com.atproto.repo.deleteRecord", {
+    input: { repo: voterDid, collection: VOTE_NSID, rkey: voteRkey(pollUri) },
+  });
+  if (!res.ok) throw new Error(res.data?.error ?? "Could not remove your vote.");
 }
 
 export interface OptionTally {
@@ -416,6 +475,7 @@ export interface PollRecord {
     mode?: string;
     sealed?: { round?: number; chain?: string };
     post?: { uri?: string };
+    visibleId?: string; // set on "centralized" records → the poll.blue DB poll id
   };
 }
 
@@ -493,12 +553,24 @@ export function clearPendingVote(): void {
   } catch { /* ignore */ }
 }
 
-// A short, valid record key. rkey charset allows [A-Za-z0-9._~-]; keep it alnum.
-const RKEY_ALPHABET = "abcdefghijklmnopqrstuvwxyz234567";
-function randomRkey(len = 13): string {
-  const bytes = new Uint8Array(len);
-  crypto.getRandomValues(bytes);
+// Record keys are TIDs (timestamp identifiers) — the atproto-native rkey format:
+// a 13-char base32-sortable encoding of a 64-bit value (53-bit microsecond clock
+// + 10-bit random clock id). They're time-ordered, so a repo's records sort by
+// creation. We keep a monotonic counter so TIDs minted in the same millisecond
+// (we only have ms precision) still strictly increase.
+const TID_ALPHABET = "234567abcdefghijklmnopqrstuvwxyz";
+let tidLast = 0n;
+const tidClockId = BigInt(Math.floor(Math.random() * 1024));
+
+function nextTid(): string {
+  let us = BigInt(Date.now()) * 1000n; // ms → µs
+  if (us <= tidLast) us = tidLast + 1n; // strictly monotonic within a ms
+  tidLast = us;
+  let n = (us << 10n) | tidClockId;
   let out = "";
-  for (let i = 0; i < len; i++) out += RKEY_ALPHABET[bytes[i] % RKEY_ALPHABET.length];
+  for (let i = 0; i < 13; i++) {
+    out = TID_ALPHABET[Number(n & 31n)] + out;
+    n >>= 5n;
+  }
   return out;
 }

@@ -6,6 +6,7 @@ import { pool } from "./db.ts";
 import { register } from "./routes/register.ts";
 import { getResults } from "./routes/results.ts";
 import { vote } from "./routes/vote.ts";
+import { deletePoll } from "./routes/delete.ts";
 import { startBot } from "./bot.ts";
 
 // Built Astro frontend (relative to cwd). Overridable for the Docker layout.
@@ -33,6 +34,8 @@ app.get("/api/poll/:id", getResults);
 // Voting is a same-origin JS POST (so firehose/crawler GETs on the link can't
 // vote). The option links themselves serve the results page below.
 app.post("/api/poll/:id/vote", vote);
+// Delete an anonymous poll (ownership proved via the creator's repo record).
+app.delete("/api/poll/:id", deletePoll);
 
 // --- static frontend --------------------------------------------------------
 app.get("/", file("index.html"));

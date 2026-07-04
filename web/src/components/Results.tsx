@@ -3,11 +3,13 @@ import { useStore } from "@nanostores/preact";
 import { postUriToBskyLink } from "../lib/poll";
 import { $account, $authReady, getAgent, initSession, signIn } from "../lib/session";
 import { makeRpc } from "../lib/oauth";
+import FlipCard from "./FlipCard";
 import {
   type Audience,
   castVote,
   clearPendingVote,
   decodePublicId,
+  deleteVote,
   getPollRecord,
   isEligible,
   isPublicId,
@@ -121,13 +123,13 @@ export default function Results() {
   const [voteCast, setVoteCast] = useState(false);
   const [castError, setCastError] = useState("");
   const [handle, setHandle] = useState("");
+  const [creatorHandle, setCreatorHandle] = useState(""); // resolved from the creator DID (public polls)
   const [signinBusy, setSigninBusy] = useState(false);
   const [now, setNow] = useState(Date.now());
   const [confirmOption, setConfirmOption] = useState(0);
   const [dontAsk, setDontAsk] = useState(false);
   const [myEligible, setMyEligible] = useState<boolean | null>(null);
   const [castFlash, setCastFlash] = useState(false);
-  const [techOpen, setTechOpen] = useState(false);
   const [skipConfirm, setSkipConfirm] = useState(() => {
     try { return localStorage.getItem(SKIP_CONFIRM_KEY) === "1"; } catch { return false; }
   });
@@ -158,6 +160,12 @@ export default function Results() {
           if (!dec) return setState("notfound");
           const rec = await getPollRecord(dec.did, dec.rkey);
           if (!rec?.value) return setState("notfound");
+          // A centralized (anonymous) poll record is just a management handle;
+          // its tally lives in the poll.blue DB under visibleId. Route there.
+          if (rec.value.mode === "centralized" && rec.value.visibleId) {
+            location.replace(`/p/${rec.value.visibleId}`);
+            return;
+          }
           const answers = pollOptionTexts(rec);
           const base = {
             isPublic: true,
@@ -171,7 +179,9 @@ export default function Results() {
             pollCid: rec.cid,
           };
           setState("ok");
-          resolveDisplayHandle(dec.did).then((h) => h && setData((d) => (d ? { ...d, posted_by: h } : d)));
+          // Resolve the creator's handle into its own state so a bare DID never
+          // renders (and so it can't be dropped by racing the tally's setData).
+          resolveDisplayHandle(dec.did).then((h) => h && setCreatorHandle(h));
 
           if (rec.value.mode === "sealed") {
             const audience = rec.value.audience;
@@ -295,16 +305,29 @@ export default function Results() {
 
   const isClosed = (d?: PollResults | null) => !!(d?.endsAt && Date.now() >= new Date(d.endsAt).getTime());
 
-  // Gate a vote: closed? logged in? confirmation needed?
+  // Human-readable description of who a gated poll is limited to.
+  function gateAudienceLabel(a: Audience): string {
+    return a.gate === "followers"
+      ? (creatorHandle ? `@${creatorHandle}'s followers` : "the creator's followers")
+      : "members of this poll's list";
+  }
+
+  // Gate a vote: closed? logged in? eligible? confirmation needed?
   function requestVote(n: number) {
     if (!publicPoll || n <= 0 || !data) return;
     if (isClosed(data)) return setCastError("This poll has closed.");
     if (!ready) return;
     setCastError("");
+    // Tapping the option you already picked unchecks it — i.e. removes your vote.
+    if (n === myVote) return void removeVote();
     if (!account) {
       setPendingVote(id, n);
       setNeedLogin(true);
       return;
+    }
+    // Ineligible voters are blocked outright (not just uncounted).
+    if (data.audience && myEligible === false) {
+      return setCastError(`Only ${gateAudienceLabel(data.audience)} can vote in this poll.`);
     }
     if (skipConfirm) performVote(n);
     else setConfirmOption(n);
@@ -314,10 +337,22 @@ export default function Results() {
   async function performVote(n: number) {
     if (!data) return;
     interactedRef.current = true;
-    setMyVote(n); // optimistic — the overlay reflects it immediately
+    if (!data.audience) setMyVote(n); // optimistic for the common ungated case
     try {
       const agent = await getAgent();
       if (!agent) return setNeedLogin(true);
+      // Gated poll: verify eligibility against the network before writing, so an
+      // ineligible voter is blocked even if the background check hadn't resolved.
+      if (data.audience) {
+        const creatorDid = decodePublicId(id)?.did;
+        const ok = creatorDid ? await isEligible(data.audience, creatorDid, agent.sub).catch(() => true) : true;
+        if (!ok) {
+          setMyEligible(false);
+          setMyVote(0);
+          return setCastError(`Only ${gateAudienceLabel(data.audience)} can vote in this poll — nothing was recorded.`);
+        }
+        setMyVote(n); // eligible → reflect it now
+      }
       const sealedRound = data.mode === "sealed" ? data.sealed?.round : undefined;
       await castVote(makeRpc(agent), agent.sub, {
         pollUri: data.pollUri!,
@@ -341,6 +376,26 @@ export default function Results() {
       setTimeout(() => setCastFlash(false), 550);
     } catch (e) {
       setCastError((e as Error).message || "Could not record your vote.");
+    }
+  }
+
+  // Unvote: delete the voter's vote record for this poll.
+  async function removeVote() {
+    if (!data || !myVote) return;
+    const prev = myVote;
+    interactedRef.current = true;
+    setMyVote(0);
+    setVoteCast(false);
+    setCastError("");
+    try {
+      const agent = await getAgent();
+      if (!agent) { setMyVote(prev); return setNeedLogin(true); }
+      await deleteVote(makeRpc(agent), agent.sub, data.pollUri!);
+      if (data.mode === "sealed") writeSealedLocal(id, 0);
+      clearPendingVote();
+    } catch (e) {
+      setMyVote(prev);
+      setCastError((e as Error).message || "Could not remove your vote.");
     }
   }
 
@@ -390,6 +445,9 @@ export default function Results() {
   }
 
   const d = data!;
+  // Public polls carry the creator's DID in posted_by; show the resolved handle
+  // instead (private/legacy polls already store a handle server-side).
+  const creator = d.isPublic ? creatorHandle : (d.posted_by ?? "");
   const view = withMyVote(d, myVote, account?.did);
   const votes = view.results.slice(1);
   const total = votes.reduce((a, b) => a + b, 0);
@@ -401,7 +459,8 @@ export default function Results() {
   const remaining = d.endsAt ? new Date(d.endsAt).getTime() - now : 0;
   const sealed = d.mode === "sealed";
   const sealedOpen = sealed && !closed;
-  const canVote = d.isPublic && !closed;
+  const ineligible = !!d.audience && myEligible === false;
+  const canVote = d.isPublic && !closed && !ineligible;
   const showLoginBanner = publicPoll && needLogin && !voteCast;
   const pdslsUrl = d.pollUri ? `https://pdsls.dev/${d.pollUri}` : undefined;
   const votePath = sealed || d.optionUris?.some(Boolean) ? "blue.poll.poll.vote:poll.uri" : "blue.poll.poll.vote:subject.uri";
@@ -415,11 +474,20 @@ export default function Results() {
   return (
     <>
       <div class="rise">
-      <div class="tilt ballot-card overflow-hidden p-7 sm:p-9">
+      <div class="tilt" style="border-radius: 1.15rem">
+      <FlipCard
+        frontClass="ballot-card overflow-hidden p-7 sm:p-9"
+        backClass="ballot-card p-6 sm:p-7"
+        infoLabel={d.isPublic ? "Technical details & verification" : "About this poll"}
+        front={() => (
+        <>
         <div class="ballot-header">✦ poll.blue ballot ✦</div>
         <div class="flex items-start justify-between gap-4">
           <h1 class="text-3xl leading-tight sm:text-4xl">{d.question}</h1>
-          <span class="pill shrink-0">{sealed ? "🔒 Sealed poll" : d.isPublic ? "Public poll" : "Private poll"}</span>
+          <span class="flex shrink-0 items-center gap-2">
+            {d.isPublic && <span class="rounded-full bg-amber-100 px-1.5 py-0.5 text-[0.58rem] font-extrabold uppercase tracking-wider text-amber-700" title="On-network polling is an alpha feature">Alpha</span>}
+            <span class="pill">{sealed ? "🔒 Sealed poll" : d.isPublic ? "Public poll" : "Private poll"}</span>
+          </span>
         </div>
 
         <div class="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-[var(--color-ink-faint)]">
@@ -440,9 +508,9 @@ export default function Results() {
           )}
         </div>
 
-        {d.audience && myEligible === false && (
+        {ineligible && (
           <p class="mt-4 rounded-xl px-4 py-2.5 text-sm font-medium" style="background: rgba(244,63,94,0.1); color: #be123c">
-            Heads up — this poll only counts {d.audience.gate === "followers" ? `@${d.posted_by}'s followers` : "members of its list"}. You can still vote, but it won't be counted.
+            🚫 Voting is closed to you — this poll only accepts {d.audience!.gate === "followers" ? (creator ? `@${creator}'s followers` : "the creator's followers") : "members of its list"}.
           </p>
         )}
 
@@ -476,8 +544,8 @@ export default function Results() {
         {voteCast && (
           <p class="mt-6 rounded-xl px-4 py-2.5 text-sm font-medium" style="background: var(--color-brand-tint); color: var(--color-brand-deep)">
             {sealed
-              ? "Your vote is sealed 🔒 — it stays encrypted until the poll closes, then reveals with everyone else's. Tap another option to change it before close."
-              : "Vote recorded to your account ✓ — you can tap another option to change it."}
+              ? "Your vote is sealed 🔒 — it stays encrypted until the poll closes, then reveals with everyone else's. Tap another option to change it, or tap the same one again to withdraw."
+              : "Vote recorded to your account ✓ — tap another option to change it, or tap the same one again to remove it."}
           </p>
         )}
         {castError && <p class="mt-6 text-sm font-medium text-red-600">{castError}</p>}
@@ -498,7 +566,7 @@ export default function Results() {
                   tabIndex={canVote ? 0 : undefined}
                   onKeyDown={canVote ? (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); requestVote(i + 1); } } : undefined}
                 >
-                  <span class="flex items-center gap-2.5 font-medium">
+                  <span class="flex items-center gap-2.5 text-lg font-medium">
                     <span class={`ballot-box ${isVoted ? "checked" : ""}`}>
                       {isVoted && <span class="stamp">✓</span>}
                       {castFlash && highlight === i + 1 && <span class="stamp-ripple"></span>}
@@ -531,12 +599,14 @@ export default function Results() {
               >
                 <div
                   class="bar-fill absolute inset-y-0 left-0"
-                  style={`width:${Math.max(pct, 1.5)}%; animation-delay:${120 + i * 120}ms; background:${isLeader ? "var(--color-brand-tint)" : "rgba(226,232,244,0.55)"}`}
+                  style={`width:${Math.max(pct, 1.5)}%; animation-delay:${120 + i * 120}ms; ${isLeader
+                    ? "background:linear-gradient(90deg, rgba(17,133,254,0.34), rgba(17,133,254,0.16)); border-right:3px solid rgba(17,133,254,0.6)"
+                    : "background:linear-gradient(90deg, rgba(125,163,210,0.30), rgba(125,163,210,0.12)); border-right:2px solid rgba(125,163,210,0.5)"}`}
                 >
                 </div>
                 <div class="relative">
                   <div class="flex items-center justify-between gap-3 px-4 py-3.5">
-                    <span class="flex items-center gap-2.5 font-medium">
+                    <span class="flex items-center gap-2.5 text-lg font-medium">
                       <span class={`ballot-box ${isVoted ? "checked" : ""}`}>
                         {isVoted && <span class="stamp">✓</span>}
                         {castFlash && highlight === i + 1 && <span class="stamp-ripple"></span>}
@@ -544,12 +614,13 @@ export default function Results() {
                       <span class="col select-none">{String(i + 1).padStart(2, "0")}</span>
                       {d.answers[i]}
                     </span>
-                    <span class="shrink-0 font-display text-lg font-bold" style={`color:${isLeader ? "var(--color-brand-deep)" : "var(--color-ink-soft)"}`}>
+                    <span class="shrink-0 font-display text-2xl font-bold" style={`color:${isLeader ? "var(--color-brand-deep)" : "var(--color-ink-soft)"}`}>
                       {pct.toFixed(0)}% <span class="text-sm font-semibold text-[var(--color-ink-faint)]">({count})</span>
                     </span>
                   </div>
                   {shownVoters.length > 0 && (
                     <div class="flex flex-wrap items-center gap-1.5 px-4 pb-3">
+                      <span class="mr-0.5 text-[11px] font-semibold uppercase tracking-wide text-[var(--color-ink-faint)]">Voted</span>
                       {shownVoters.map((did) => {
                         const p = profiles[did];
                         return (
@@ -578,7 +649,7 @@ export default function Results() {
         )}
 
         <div class="mt-7 flex flex-wrap items-center justify-between gap-3 pt-5 text-sm text-[var(--color-ink-soft)]" style="border-top: 2px dashed rgba(120,160,210,0.5)">
-          <span title={d.isPublic ? "Distinct accounts that voted" : "Voting or tapping 'Show results' counts as an interaction"}>
+          <span>
             {sealedOpen
               ? `${(d.cast ?? 0).toLocaleString()} ${(d.cast ?? 0) === 1 ? "vote" : "votes"} sealed`
               : (
@@ -591,20 +662,80 @@ export default function Results() {
           </span>
           {d.post_uri && (
             <a class="font-semibold text-[var(--color-brand-deep)] hover:underline" href={postUriToBskyLink(d.post_uri)} target="_blank" rel="noreferrer">
-              {d.posted_by ? `Posted by @${d.posted_by}` : "View on Bluesky"}{created ? ` · ${created.toLocaleDateString()}` : ""}
+              {creator ? `Posted by @${creator}` : "View on Bluesky"}{created ? ` · ${created.toLocaleDateString()}` : ""}
             </a>
           )}
         </div>
 
-        {d.isPublic && (
-          <button
-            class="tech-details mt-6 flex w-full items-center justify-between pt-5 text-sm font-semibold text-[var(--color-brand-deep)]"
-            onClick={() => setTechOpen(true)}
-          >
-            <span>🔎 Technical details &amp; verification</span>
-            <span aria-hidden="true">→</span>
-          </button>
+        </>
         )}
+        back={() => (
+        <>
+          <div class="flex items-center gap-3.5">
+            <span class={`verify-seal ${d.isPublic ? "" : "verify-seal--muted"}`} aria-hidden="true">{d.isPublic ? "✓" : "ⓘ"}</span>
+            <div>
+              <h2 class="text-2xl leading-none">{d.isPublic ? "Verify this poll" : "About this poll"}</h2>
+              <p class="mt-1 text-[0.65rem] font-bold uppercase tracking-[0.18em] text-[var(--color-ink-faint)]">
+                {d.isPublic ? (sealed ? "Timelock · self-verifiable" : "On-network · self-verifiable") : "Legacy · centrally tallied"}
+              </p>
+            </div>
+          </div>
+          <p class="mt-3 text-sm text-[var(--color-ink-soft)]">
+            {d.isPublic
+              ? <>Everything here is public on the AT&nbsp;Protocol network — you don't have to trust poll.blue; recount it yourself.</>
+              : <>A legacy, centrally-tallied poll: votes are counted by poll.blue's backend (one per person, deduplicated by IP) rather than recorded on the network.</>}
+          </p>
+
+          <h3 class="tech-head mt-6 text-xs font-bold uppercase tracking-widest text-[var(--color-ink-faint)]">Poll {d.isPublic ? "record" : "details"}</h3>
+          <dl class="receipt mt-2 space-y-1.5 p-3.5 text-sm">
+            <div class="flex justify-between gap-3"><dt class="text-[var(--color-ink-faint)]">Mode</dt><dd class="font-medium">{d.isPublic ? (sealed ? "sealed · timelock" : d.audience ? "public · gated" : "public") : "centralized · poll.blue"}</dd></div>
+            {d.created_at && <div class="flex justify-between gap-3"><dt class="text-[var(--color-ink-faint)]">Created</dt><dd>{new Date(d.created_at).toLocaleString()}</dd></div>}
+            {d.endsAt && <div class="flex justify-between gap-3"><dt class="text-[var(--color-ink-faint)]">{sealed ? "Reveals" : "Closes"}</dt><dd>{new Date(d.endsAt).toLocaleString()}</dd></div>}
+          </dl>
+          {pdslsUrl && <p class="mt-2 break-all text-xs"><a class="text-[var(--color-brand-deep)] hover:underline" href={pdslsUrl} target="_blank" rel="noreferrer">{d.pollUri} ↗</a></p>}
+
+          {d.isPublic && (
+            <>
+              <h3 class="tech-head mt-6 text-xs font-bold uppercase tracking-widest text-[var(--color-ink-faint)]">How it's tallied</h3>
+              {sealed ? (
+                <div class="mt-2 space-y-1.5 text-sm text-[var(--color-ink-soft)]">
+                  <p>Each choice is timelock-encrypted (drand). Nobody — including poll.blue — can read votes before close.</p>
+                  <p>Chain <code>{d.sealed?.chain ? d.sealed.chain.slice(0, 12) + "…" : "?"}</code>, round <code>{d.sealed?.round ?? "?"}</code>. Once that round publishes, anyone decrypts every ciphertext and counts.</p>
+                </div>
+              ) : (
+                <p class="mt-2 text-sm text-[var(--color-ink-soft)]">Votes are records linking to the poll; tallied by counting those backlinks via Constellation (<code>{votePath}</code>).</p>
+              )}
+              {d.audience && <p class="mt-2 text-sm text-[var(--color-ink-soft)]">Gated: only {d.audience.gate === "followers" ? "the creator's followers" : "members of the list"} are counted (checked at tally).</p>}
+              {rawVotesUrl && <p class="mt-2 text-xs"><a class="text-[var(--color-brand-deep)] hover:underline" href={rawVotesUrl} target="_blank" rel="noreferrer">Raw vote records (Constellation JSON) ↗</a></p>}
+
+              <h3 class="tech-head mt-6 text-xs font-bold uppercase tracking-widest text-[var(--color-ink-faint)]">
+                Votes{sealedOpen ? "" : ` · ${revealedVotes.length}${revealedVotes.length >= 24 ? "+" : ""}`}
+              </h3>
+              {sealedOpen ? (
+                <p class="mt-2 text-sm text-[var(--color-ink-soft)]">🔒 {(d.cast ?? 0).toLocaleString()} sealed — individual choices are hidden until close.</p>
+              ) : revealedVotes.length === 0 ? (
+                <p class="mt-2 text-sm text-[var(--color-ink-faint)]">No votes yet.</p>
+              ) : (
+                <ul class="mt-2 divide-y" style="border-color: var(--color-line)">
+                  {revealedVotes.map((v) => {
+                    const p = profiles[v.did];
+                    return (
+                      <li class="flex items-center justify-between gap-3 py-2 text-sm">
+                        <a class="min-w-0 flex-1 truncate font-medium text-[var(--color-brand-deep)] hover:underline" href={`https://bsky.app/profile/${p?.handle ?? v.did}`} target="_blank" rel="noreferrer">
+                          @{p?.handle ?? `${v.did.slice(0, 18)}…`}
+                        </a>
+                        <span class="shrink-0 text-[var(--color-ink-soft)]">{d.answers[v.option - 1]}</span>
+                        <a class="shrink-0 text-[var(--color-ink-faint)] hover:text-[var(--color-brand-deep)]" href={`https://pdsls.dev/${voteRecordUri(v.did, d.pollUri!)}`} target="_blank" rel="noreferrer" title="View the raw vote record">↗</a>
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
+            </>
+          )}
+        </>
+        )}
+      />
       </div>
       </div>
 
@@ -634,67 +765,6 @@ export default function Results() {
               <button class="btn btn-primary" onClick={confirmVote}>{sealed ? "Seal vote" : "Vote publicly"}</button>
             </div>
           </div>
-        </div>
-      )}
-
-      {techOpen && (
-        <div class="fixed inset-0 z-[70] flex justify-end" onClick={() => setTechOpen(false)}>
-          <div class="absolute inset-0" style="background: rgba(15,23,42,0.42)"></div>
-          <aside
-            class="relative h-full w-full max-w-md overflow-y-auto p-6 sm:p-7"
-            style="background: linear-gradient(180deg,#ffffff,#eef5fd); box-shadow: -24px 0 60px -24px rgba(35,85,150,0.55); border-left: 1px solid rgba(150,185,220,0.6)"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div class="flex items-center justify-between gap-4">
-              <h2 class="text-2xl">Verify this poll</h2>
-              <button class="btn btn-ghost !px-3.5 !py-1.5 text-sm" onClick={() => setTechOpen(false)}>Close</button>
-            </div>
-            <p class="mt-2 text-sm text-[var(--color-ink-soft)]">Everything here is public on the AT&nbsp;Protocol network — you don't have to trust poll.blue; recount it yourself.</p>
-
-            <h3 class="mt-6 text-xs font-bold uppercase tracking-widest text-[var(--color-ink-faint)]">Poll record</h3>
-            <dl class="mt-2 space-y-1.5 text-sm">
-              <div class="flex justify-between gap-3"><dt class="text-[var(--color-ink-faint)]">Mode</dt><dd class="font-medium">{sealed ? "sealed · timelock" : d.audience ? "public · gated" : "public"}</dd></div>
-              {d.created_at && <div class="flex justify-between gap-3"><dt class="text-[var(--color-ink-faint)]">Created</dt><dd>{new Date(d.created_at).toLocaleString()}</dd></div>}
-              {d.endsAt && <div class="flex justify-between gap-3"><dt class="text-[var(--color-ink-faint)]">{sealed ? "Reveals" : "Closes"}</dt><dd>{new Date(d.endsAt).toLocaleString()}</dd></div>}
-            </dl>
-            {pdslsUrl && <p class="mt-2 break-all text-xs"><a class="text-[var(--color-brand-deep)] hover:underline" href={pdslsUrl} target="_blank" rel="noreferrer">{d.pollUri} ↗</a></p>}
-
-            <h3 class="mt-6 text-xs font-bold uppercase tracking-widest text-[var(--color-ink-faint)]">How it's tallied</h3>
-            {sealed ? (
-              <div class="mt-2 space-y-1.5 text-sm text-[var(--color-ink-soft)]">
-                <p>Each choice is timelock-encrypted (drand). Nobody — including poll.blue — can read votes before close.</p>
-                <p>Chain <code>{d.sealed?.chain ? d.sealed.chain.slice(0, 12) + "…" : "?"}</code>, round <code>{d.sealed?.round ?? "?"}</code>. Once that round publishes, anyone decrypts every ciphertext and counts.</p>
-              </div>
-            ) : (
-              <p class="mt-2 text-sm text-[var(--color-ink-soft)]">Votes are records linking to the poll; tallied by counting those backlinks via Constellation (<code>{votePath}</code>).</p>
-            )}
-            {d.audience && <p class="mt-2 text-sm text-[var(--color-ink-soft)]">Gated: only {d.audience.gate === "followers" ? "the creator's followers" : "members of the list"} are counted (checked at tally).</p>}
-            {rawVotesUrl && <p class="mt-2 text-xs"><a class="text-[var(--color-brand-deep)] hover:underline" href={rawVotesUrl} target="_blank" rel="noreferrer">Raw vote records (Constellation JSON) ↗</a></p>}
-
-            <h3 class="mt-6 text-xs font-bold uppercase tracking-widest text-[var(--color-ink-faint)]">
-              Votes{sealedOpen ? "" : ` · ${revealedVotes.length}${revealedVotes.length >= 24 ? "+" : ""}`}
-            </h3>
-            {sealedOpen ? (
-              <p class="mt-2 text-sm text-[var(--color-ink-soft)]">🔒 {(d.cast ?? 0).toLocaleString()} sealed — individual choices are hidden until close.</p>
-            ) : revealedVotes.length === 0 ? (
-              <p class="mt-2 text-sm text-[var(--color-ink-faint)]">No votes yet.</p>
-            ) : (
-              <ul class="mt-2 divide-y" style="border-color: var(--color-line)">
-                {revealedVotes.map((v) => {
-                  const p = profiles[v.did];
-                  return (
-                    <li class="flex items-center justify-between gap-3 py-2 text-sm">
-                      <a class="min-w-0 flex-1 truncate font-medium text-[var(--color-brand-deep)] hover:underline" href={`https://bsky.app/profile/${p?.handle ?? v.did}`} target="_blank" rel="noreferrer">
-                        @{p?.handle ?? `${v.did.slice(0, 18)}…`}
-                      </a>
-                      <span class="shrink-0 text-[var(--color-ink-soft)]">{d.answers[v.option - 1]}</span>
-                      <a class="shrink-0 text-[var(--color-ink-faint)] hover:text-[var(--color-brand-deep)]" href={`https://pdsls.dev/${voteRecordUri(v.did, d.pollUri!)}`} target="_blank" rel="noreferrer" title="View the raw vote record">↗</a>
-                    </li>
-                  );
-                })}
-              </ul>
-            )}
-          </aside>
         </div>
       )}
 

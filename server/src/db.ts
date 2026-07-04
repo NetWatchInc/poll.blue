@@ -38,6 +38,7 @@ export interface DbPoll {
   answers: string[];
   results: number[];
   results_posted: boolean;
+  blue_poll_uri: string | null;
 }
 
 export async function query<T extends pg.QueryResultRow = pg.QueryResultRow>(

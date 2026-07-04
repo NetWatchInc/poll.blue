@@ -22,7 +22,8 @@
     "astro": "^5.13.0",
     "nanostores": "^1.4.0",
     "preact": "^10.26.0",
-    "tlock-js": "^0.9.0"
+    "tlock-js": "^0.9.0",
+    "yaml": "^2.9.0"
   },
   "devDependencies": {
     "@astrojs/check": "^0.9.9",

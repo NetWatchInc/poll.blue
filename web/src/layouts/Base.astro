@@ -1,6 +1,7 @@
 ---
 import "../styles/global.css";
 import AccountMenu from "../components/AccountMenu.tsx";
+import { site } from "../lib/site";
 
 interface Props {
   title?: string;
@@ -8,8 +9,8 @@ interface Props {
 }
 
 const {
-  title = "poll.blue — polls for the Atmosphere",
-  description = "Create polls on Bluesky. Sign in with your account, post a poll, and watch the results roll in.",
+  title = site.site.title,
+  description = site.site.description,
 } = Astro.props;
 ---
 
@@ -54,8 +55,9 @@ const {
             poll<span style="color: var(--color-brand-deep)">.blue</span>
           </span>
         </a>
-        <nav class="flex items-center gap-2 text-sm font-semibold text-[var(--color-ink-soft)]">
-          <a class="hidden rounded-full px-4 py-2 transition-colors hover:text-[var(--color-brand-deep)] sm:block" href="/create">Create a poll</a>
+        <nav class="flex items-center gap-1 text-sm font-semibold text-[var(--color-ink-soft)]">
+          <a class="hidden rounded-full px-4 py-2 transition-colors hover:text-[var(--color-brand-deep)] sm:block" href="/create">{site.nav.createLink}</a>
+          <a class="hidden rounded-full px-4 py-2 transition-colors hover:text-[var(--color-brand-deep)] sm:block" href="/mine">{site.nav.mineLink}</a>
           <AccountMenu client:only="preact" />
         </nav>
       </header>
@@ -70,10 +72,10 @@ const {
           style="border-color: var(--color-line)"
         >
           <p>
-            poll.blue — run by
-            <a class="font-semibold text-[var(--color-brand-deep)] hover:underline" href="https://bsky.app/profile/did:plc:bnqkww7bjxaacajzvu5gswdf">@shreyanjain.net</a>
+            {site.footer.creditPrefix}
+            <a class="font-semibold text-[var(--color-brand-deep)] hover:underline" href={site.footer.creditHref}>{site.footer.creditLabel}</a>
           </p>
-          <p class="text-[var(--color-ink-faint)]">Made for the Atmosphere.</p>
+          <p class="text-[var(--color-ink-faint)]">{site.footer.tagline}</p>
         </div>
       </footer>
     </div>
@@ -95,8 +97,8 @@ const {
           const r = el.getBoundingClientRect();
           const px = (e.clientX - r.left) / r.width;
           const py = (e.clientY - r.top) / r.height;
-          el.style.setProperty("--rx", ((px - 0.5) * 10).toFixed(2) + "deg");
-          el.style.setProperty("--ry", (-(py - 0.5) * 10).toFixed(2) + "deg");
+          el.style.setProperty("--rx", ((px - 0.5) * 8).toFixed(2) + "deg");
+          el.style.setProperty("--ry", (-(py - 0.5) * 8).toFixed(2) + "deg");
           el.style.setProperty("--mx", (px * 100).toFixed(1) + "%");
           el.style.setProperty("--my", (py * 100).toFixed(1) + "%");
           el.classList.add("tilting");

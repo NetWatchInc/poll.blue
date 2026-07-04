@@ -1,28 +1,9 @@
 ---
 import Base from "../layouts/Base.astro";
+import { site } from "../lib/site";
 
-const steps = [
-  {
-    n: "01",
-    title: "Sign in through the Atmosphere",
-    body: "No new accounts needed. The existing handle you use on Bluesky and other Atmospheric apps works here.",
-  },
-  {
-    n: "02",
-    title: "Write your question",
-    body: "Up to four options. We compose a clean, tappable poll post and publish it straight to your own account.",
-  },
-  {
-    n: "03",
-    title: "Watch it roll in",
-    body: "Each option is a link people tap to vote. Live tallies, a shareable results page, and an automatic recap after 24 hours.",
-  },
-];
-
-const demoOptions = [
-  { label: "🔴 Red Button", pct: 27 },
-  { label: "🔵 Blue Button", pct: 73 },
-];
+const { home } = site;
+const { demo, how, finalCta } = home;
 ---
 
 <Base>
@@ -36,23 +17,23 @@ const demoOptions = [
       </div>
       <p class="pill rise" style="animation-delay: 40ms">
         <span class="inline-block h-1.5 w-1.5 rounded-full" style="background: var(--color-brand)"></span>
-        Polls, for the Atmosphere.
+        {home.pill}
       </p>
       <h1 class="rise mt-6 text-5xl leading-[0.98] sm:text-6xl md:text-[4.25rem]" style="animation-delay: 90ms">
-        Ask Bluesky<br />
-        <span style="color: var(--color-brand)">anything.</span>
+        {home.heroTitleLead}<br />
+        <span style="color: var(--color-brand)">{home.heroTitleAccent}</span>
       </h1>
       <p class="rise mt-6 max-w-md text-lg leading-relaxed text-[var(--color-ink-soft)]" style="animation-delay: 150ms">
-        Spin up a poll in seconds and post it straight to your Bluesky feed.
+        {home.heroSubtitle}
       </p>
       <div class="rise mt-8 flex flex-wrap items-center gap-3" style="animation-delay: 210ms">
         <a href="/create" class="btn btn-primary text-base">
-          Create a poll
+          {home.ctaPrimary}
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
             <path d="M5 12h14M13 6l6 6-6 6" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" />
           </svg>
         </a>
-        <a href="#how" class="btn btn-ghost text-base">See how it works</a>
+        <a href="#how" class="btn btn-ghost text-base">{home.ctaSecondary}</a>
       </div>
     </div>
 
@@ -67,14 +48,14 @@ const demoOptions = [
         <div class="flex items-center gap-3">
           <div class="h-10 w-10 rounded-full" style="background: linear-gradient(135deg, #1185fe, #073a86)"></div>
           <div class="leading-tight">
-            <p class="font-semibold">shreyanjain.net</p>
-            <p class="text-sm text-[var(--color-ink-faint)]">via poll.blue</p>
+            <p class="font-semibold">{demo.author}</p>
+            <p class="text-sm text-[var(--color-ink-faint)]">{demo.via}</p>
           </div>
         </div>
-        <p class="mt-4 text-lg font-semibold">Would you press the red button or the blue button?</p>
+        <p class="mt-4 text-lg font-semibold">{demo.question}</p>
 
         <div class="mt-4 space-y-2.5">
-          {demoOptions.map((o, i) => (
+          {demo.options.map((o, i) => (
             <div class="relative overflow-hidden rounded-xl border" style="border-color: var(--color-line)">
               <div
                 class="bar-fill absolute inset-y-0 left-0"
@@ -88,20 +69,20 @@ const demoOptions = [
             </div>
           ))}
         </div>
-        <p class="mt-4 text-sm text-[var(--color-ink-faint)]">📊 1,204 votes · ends in 18h</p>
+        <p class="mt-4 text-sm text-[var(--color-ink-faint)]">{demo.footer}</p>
       </div>
     </div>
   </section>
 
   <!-- How it works -->
   <section id="how" class="mx-auto max-w-5xl px-6 py-16">
-    <h2 class="text-3xl sm:text-4xl">Three taps to a live poll.</h2>
+    <h2 class="text-3xl sm:text-4xl">{how.title}</h2>
     <p class="mt-3 max-w-xl text-[var(--color-ink-soft)]">
-      Your poll lives in a Bluesky post. poll.blue keeps track of the votes in its own central database, and prints them prettily for you! 
+      {how.intro}
     </p>
 
     <div class="mt-10 grid gap-5 sm:grid-cols-3">
-      {steps.map((s) => (
+      {how.steps.map((s) => (
         <div class="card tilt flex flex-col gap-3 p-6">
           <span class="font-display text-sm font-bold tracking-widest" style="color: var(--color-brand)">{s.n}</span>
           <h3 class="text-xl">{s.title}</h3>
@@ -111,9 +92,9 @@ const demoOptions = [
     </div>
 
     <div class="card tilt mt-10 flex flex-col items-center gap-5 p-10 text-center sm:p-14">
-      <h2 class="max-w-xl text-3xl sm:text-4xl">Ready when you are.</h2>
-      <p class="max-w-md text-[var(--color-ink-soft)]">C'mon, press the button. I know you want to. Post some cursed question. Please.</p>
-      <a href="/create" class="btn btn-primary text-base">Create your first poll</a>
+      <h2 class="max-w-xl text-3xl sm:text-4xl">{finalCta.title}</h2>
+      <p class="max-w-md text-[var(--color-ink-soft)]">{finalCta.body}</p>
+      <a href="/create" class="btn btn-primary text-base">{finalCta.button}</a>
     </div>
   </section>
 </Base>

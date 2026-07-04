@@ -1,7 +1,9 @@
 import { useEffect, useState } from "preact/hooks";
 import { useStore } from "@nanostores/preact";
-import { $account, $authReady, initSession, signIn } from "../lib/session";
+import { $account, $authReady, getAgent, initSession, signIn } from "../lib/session";
+import { makeRpc } from "../lib/oauth";
 import {
+  deletePollRecord,
   encodePublicId,
   getPollRecord,
   listRecords,
@@ -12,10 +14,14 @@ import {
 } from "../lib/atpoll";
 
 interface CreatedPoll {
-  id: string;
+  id: string; // link target: visibleId (centralized) or did~rkey (network)
   question: string;
   endsAt?: string;
   createdAt?: string;
+  centralized?: boolean; // anonymous / IP-tallied poll with a manage-able record
+  did?: string; // repo holding the record (for delete)
+  rkey?: string; // record key (for delete)
+  visibleId?: string; // poll.blue DB id (for backend delete)
 }
 interface VotedPoll {
   id: string;
@@ -32,6 +38,9 @@ export default function MyPolls() {
   const [handle, setHandle] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [confirmDelete, setConfirmDelete] = useState<string | null>(null); // rkey being confirmed
+  const [deleting, setDeleting] = useState<string | null>(null); // rkey being deleted
+  const [deleteError, setDeleteError] = useState("");
 
   useEffect(() => {
     initSession();
@@ -48,8 +57,18 @@ export default function MyPolls() {
           .map((r) => {
             const parsed = parsePollAtUri(r.uri);
             if (!parsed) return null;
-            const v = r.value as { question?: string; endsAt?: string; createdAt?: string };
-            return { id: encodePublicId(parsed.did, parsed.rkey), question: v.question ?? "(untitled)", endsAt: v.endsAt, createdAt: v.createdAt };
+            const v = r.value as { question?: string; endsAt?: string; createdAt?: string; mode?: string; visibleId?: string };
+            const centralized = v.mode === "centralized" && !!v.visibleId;
+            return {
+              id: centralized ? v.visibleId! : encodePublicId(parsed.did, parsed.rkey),
+              question: v.question ?? "(untitled)",
+              endsAt: v.endsAt,
+              createdAt: v.createdAt,
+              centralized,
+              did: parsed.did,
+              rkey: parsed.rkey,
+              visibleId: v.visibleId,
+            };
           })
           .filter(Boolean) as CreatedPoll[];
         polls.sort((a, b) => (b.createdAt ?? "").localeCompare(a.createdAt ?? ""));
@@ -88,6 +107,30 @@ export default function MyPolls() {
       }
     })();
   }, [account?.did]);
+
+  // Delete an anonymous/centralized poll: remove the repo record (only the owner
+  // can — this is the backend's proof of ownership), then purge the DB poll.
+  async function handleDelete(p: CreatedPoll) {
+    if (!p.centralized || !p.did || !p.rkey || !p.visibleId) return;
+    setDeleteError("");
+    setConfirmDelete(null);
+    setDeleting(p.rkey);
+    try {
+      const agent = await getAgent();
+      if (!agent) throw new Error("Your session expired — sign in again.");
+      await deletePollRecord(makeRpc(agent), agent.sub, p.rkey);
+      const resp = await fetch(`/api/poll/${encodeURIComponent(p.visibleId)}`, { method: "DELETE" });
+      if (!resp.ok && resp.status !== 404) {
+        const j = await resp.json().catch(() => ({}));
+        throw new Error(typeof j.error === "string" ? j.error : "Removed from your repo, but the backend couldn't purge it.");
+      }
+      setCreated((list) => (list ?? []).filter((x) => x.rkey !== p.rkey));
+    } catch (e) {
+      setDeleteError((e as Error).message || "Could not delete the poll.");
+    } finally {
+      setDeleting(null);
+    }
+  }
 
   async function doSignIn() {
     const h = handle.trim().replace(/^@/, "");
@@ -144,21 +187,41 @@ export default function MyPolls() {
     <div class="rise space-y-10">
       <section>
         <h2 class="text-2xl">Polls you made</h2>
+        {deleteError && <p class="mt-3 text-sm font-medium text-red-600">{deleteError}</p>}
         {created === null ? (
           <p class="mt-3 text-[var(--color-ink-faint)]">Loading…</p>
         ) : created.length === 0 ? (
-          <p class="mt-3 text-[var(--color-ink-soft)]">No public polls yet. <a class="font-semibold text-[var(--color-brand-deep)] hover:underline" href="/create">Make one →</a></p>
+          <p class="mt-3 text-[var(--color-ink-soft)]">No polls yet. <a class="font-semibold text-[var(--color-brand-deep)] hover:underline" href="/create">Make one →</a></p>
         ) : (
           <div class="mt-4 space-y-2.5">
             {created.map((p) => {
               const closed = p.endsAt && now >= new Date(p.endsAt).getTime();
+              const isConfirming = confirmDelete === p.rkey;
+              const isDeleting = deleting === p.rkey;
               return (
-                <a href={`/p/${p.id}`} class="card flex items-center justify-between gap-4 p-4 transition-shadow hover:shadow-[var(--shadow-lift)]">
-                  <span class="font-medium">{p.question}</span>
-                  <span class="shrink-0 text-xs font-semibold text-[var(--color-ink-faint)]">
-                    {p.endsAt ? (closed ? "closed" : "open") : "no end date"}
-                  </span>
-                </a>
+                <div class="card flex items-center justify-between gap-3 p-4 transition-shadow hover:shadow-[var(--shadow-lift)]">
+                  <a href={`/p/${p.id}`} class="min-w-0 flex-1 font-medium hover:underline">{p.question}</a>
+                  <div class="flex shrink-0 items-center gap-3">
+                    <span class="text-xs font-semibold text-[var(--color-ink-faint)]"
+                      data-tip={p.centralized ? "Anonymous poll — tallied centrally by poll.blue" : undefined}>
+                      {p.centralized ? "anonymous" : p.endsAt ? (closed ? "closed" : "open") : "no end date"}
+                    </span>
+                    {p.centralized && (isConfirming ? (
+                      <span class="flex items-center gap-2">
+                        <button type="button" class="text-xs font-semibold text-red-600 hover:underline disabled:opacity-50" disabled={isDeleting} onClick={() => handleDelete(p)}>
+                          {isDeleting ? "Deleting…" : "Delete?"}
+                        </button>
+                        <button type="button" class="text-xs font-semibold text-[var(--color-ink-faint)] hover:underline" disabled={isDeleting} onClick={() => setConfirmDelete(null)}>Cancel</button>
+                      </span>
+                    ) : (
+                      <button type="button" class="text-xs font-semibold text-[var(--color-ink-faint)] transition-colors hover:text-red-600"
+                        aria-label="Delete poll"
+                        onClick={() => { setDeleteError(""); setConfirmDelete(p.rkey!); }}>
+                        Delete
+                      </button>
+                    ))}
+                  </div>
+                </div>
               );
             })}
           </div>
