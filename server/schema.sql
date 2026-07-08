@@ -3,9 +3,9 @@
 
 CREATE TABLE IF NOT EXISTS polls (
   id             integer GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-  post_uri       varchar(100) UNIQUE,
+  post_uri       text UNIQUE,
   posted_by      varchar(100),
-  question       varchar(200) NOT NULL,
+  question       text NOT NULL,
   answers        jsonb NOT NULL,
   results        jsonb NOT NULL,           -- [abstentions, votesForOpt1, ...]
   visible_id     varchar(16) NOT NULL UNIQUE,
@@ -17,6 +17,18 @@ CREATE TABLE IF NOT EXISTS polls (
 
 -- Existing production DBs: add the manage-able-record column if missing.
 ALTER TABLE polls ADD COLUMN IF NOT EXISTS blue_poll_uri varchar(200);
+
+-- Widen columns that used to be length-capped (question was varchar(200);
+-- post_uri varchar(100) could overflow for long did:web URIs). Guarded so the
+-- startup migration only touches them when needed.
+DO $$ BEGIN
+  IF (SELECT data_type FROM information_schema.columns WHERE table_name = 'polls' AND column_name = 'question') <> 'text' THEN
+    ALTER TABLE polls ALTER COLUMN question TYPE text;
+  END IF;
+  IF (SELECT data_type FROM information_schema.columns WHERE table_name = 'polls' AND column_name = 'post_uri') <> 'text' THEN
+    ALTER TABLE polls ALTER COLUMN post_uri TYPE text;
+  END IF;
+END $$;
 
 CREATE TABLE IF NOT EXISTS votes (
   id      integer GENERATED ALWAYS AS IDENTITY PRIMARY KEY,

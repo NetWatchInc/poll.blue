@@ -5,10 +5,12 @@ import { fetchDidDoc, handleFromDidDoc, pdsFromDidDoc } from "../identity.ts";
 import { likeRepost } from "../bot.ts";
 
 const schema = z.object({
-  question: z.string().min(1).max(200),
-  answers: z.array(z.string().min(1).max(50)).min(2).max(4),
+  // Generous bounds — the composer caps the whole post at 300 graphemes; the
+  // server just guards against abuse. Columns are now `text`, so no truncation.
+  question: z.string().min(1).max(2000),
+  answers: z.array(z.string().min(1).max(50)).min(2).max(10),
   visible_id: z.string().min(1).max(16),
-  post_uri: z.string().max(200).regex(/^at:\/\//, "must be an at:// URI"),
+  post_uri: z.string().max(300).regex(/^at:\/\//, "must be an at:// URI"),
   // Optional at-uri of a blue.poll.poll.poll record in the creator's repo. When
   // present it makes the poll manage-able (see the DELETE route): deleting that
   // record is the ownership proof the backend checks before purging the poll.

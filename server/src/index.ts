@@ -2,7 +2,7 @@ import { serve } from "@hono/node-server";
 import { serveStatic } from "@hono/node-server/serve-static";
 import { Hono } from "hono";
 import { config, dbDescription } from "./config.ts";
-import { pool } from "./db.ts";
+import { migrate, pool } from "./db.ts";
 import { register } from "./routes/register.ts";
 import { getResults } from "./routes/results.ts";
 import { vote } from "./routes/vote.ts";
@@ -53,6 +53,15 @@ app.get("*", file("index.html")); // SPA fallback
 try {
   await pool.query("SELECT 1");
   console.log(`DB connected (${dbDescription}).`);
+  // Self-heal the schema (adds any missing columns, e.g. blue_poll_uri). Kept
+  // separate so a migration failure is logged but never blocks startup.
+  try {
+    await migrate();
+    console.log("DB schema ensured (idempotent migrations applied).");
+  } catch (e) {
+    console.error(`DB migration FAILED: ${(e as Error).message}`);
+    console.error("→ Poll registration may fail until the schema is up to date (see server/schema.sql).");
+  }
 } catch (e) {
   console.error(`DB connection FAILED (${dbDescription}): ${(e as Error).message}`);
   console.error("→ Check DATABASE_URL or PG_* env vars. Poll registration & voting need the DB.");

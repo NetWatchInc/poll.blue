@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import pg from "pg";
 import { config } from "./config.ts";
 
@@ -28,6 +29,17 @@ function makePool(): pg.Pool {
 }
 
 export const pool = makePool();
+
+// Apply the (idempotent) schema on startup so a fresh or partially-migrated
+// database self-heals — every statement in schema.sql is CREATE/ALTER ... IF NOT
+// EXISTS, so this is safe to run on every boot. This is what adds columns like
+// `blue_poll_uri` to an existing production DB that predates them. schema.sql
+// ships alongside the compiled server (Dockerfile `COPY server/ ./`), one level
+// up from this module.
+export async function migrate(): Promise<void> {
+  const sql = readFileSync(new URL("../schema.sql", import.meta.url), "utf8");
+  await pool.query(sql);
+}
 
 export interface DbPoll {
   id: number;

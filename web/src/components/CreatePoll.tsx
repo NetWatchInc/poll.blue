@@ -56,6 +56,19 @@ function AlphaTag() {
   );
 }
 
+// Remember the creator's last public/private choice across sessions, and default
+// to PRIVATE so anyone who's been posting anonymous polls is never silently
+// switched onto public, on-network voting without choosing it.
+const PRIVACY_KEY = "pb_privacy";
+function readStoredRecording(): "network" | "legacy" {
+  try {
+    const v = localStorage.getItem(PRIVACY_KEY);
+    if (v === "public") return "network";
+    if (v === "private") return "legacy";
+  } catch { /* ignore */ }
+  return "legacy";
+}
+
 export default function CreatePoll() {
   const account = useStore($account);
   const ready = useStore($authReady);
@@ -67,7 +80,7 @@ export default function CreatePoll() {
   const [replyTo, setReplyTo] = useState("");
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [showCompare, setShowCompare] = useState(false);
-  const [recording, setRecording] = useState<"network" | "legacy">("network");
+  const [recording, setRecording] = useState<"network" | "legacy">(readStoredRecording);
   const [results, setResults] = useState<"live" | "sealed">("live");
   const [duration, setDuration] = useState("none");
   const [gate, setGate] = useState<"none" | "followers" | "list">("none");
@@ -90,8 +103,20 @@ export default function CreatePoll() {
   // ballot is a refinement of public voting (results sealed until close).
   const privacy: Privacy = recording === "network" ? "public" : "private";
   function choosePrivacy(p: Privacy) {
+    try { localStorage.setItem(PRIVACY_KEY, p); } catch { /* ignore */ }
     if (p === "public") setRecording("network");
     else { setRecording("legacy"); setResults("live"); setGate("none"); }
+  }
+  // Arrow-key navigation for the public/private radiogroup (a11y).
+  function privacyKeyNav(e: KeyboardEvent) {
+    if (!["ArrowDown", "ArrowRight", "ArrowUp", "ArrowLeft"].includes(e.key)) return;
+    e.preventDefault();
+    const order: Privacy[] = ["public", "private"];
+    const dir = e.key === "ArrowDown" || e.key === "ArrowRight" ? 1 : -1;
+    const next = order[(order.indexOf(privacy) + dir + order.length) % order.length];
+    choosePrivacy(next);
+    const btns = (e.currentTarget as HTMLElement).querySelectorAll<HTMLButtonElement>('[role="radio"]');
+    btns[order.indexOf(next)]?.focus();
   }
 
   function addImages(files: FileList | null) {
@@ -403,7 +428,22 @@ export default function CreatePoll() {
           )}
         </div>
 
-        <div class="mt-6 flex items-center gap-4">
+        {/* Loud, unmissable reminder of which kind of poll is about to go out —
+            so nobody posts publicly (or privately) by accident. */}
+        <div class="mt-6 flex flex-wrap items-center gap-x-2 gap-y-1 rounded-2xl border-2 px-4 py-3 text-sm"
+          style={privacy === "public"
+            ? "border-color: var(--color-brand); background: var(--color-brand-tint); color: var(--color-brand-ink)"
+            : "border-color: #94a3b8; background: #eef2f7; color: #334155"}>
+          <span class="text-lg leading-none">{privacy === "public" ? "🌐" : "🕶️"}</span>
+          <span class="font-extrabold uppercase tracking-wide">{privacy === "public" ? "Public poll" : "Private poll"}</span>
+          <span class="opacity-80">— {privacy === "public" ? "everyone can see how each person voted" : "individual votes stay anonymous"}.</span>
+          <button type="button" class="font-bold underline underline-offset-2 hover:no-underline"
+            onClick={() => choosePrivacy(privacy === "public" ? "private" : "public")}>
+            Switch to {privacy === "public" ? "private" : "public"}
+          </button>
+        </div>
+
+        <div class="mt-5 flex items-center gap-4">
           <button class="btn btn-primary !px-8 !py-3.5 text-base" disabled={!canPost || busy} onClick={post}>
             {busy ? "Posting…" : "Post poll"}
             {!busy && (
@@ -427,12 +467,13 @@ export default function CreatePoll() {
           <>
             <span class="pill">Poll setup</span>
 
-            <p class="mt-5 text-sm font-semibold text-[var(--color-ink-soft)]">Are votes public or private?</p>
-            <div class="mt-2 grid gap-2">
+            <p id="privacy-label" class="mt-5 text-sm font-semibold text-[var(--color-ink-soft)]">Are votes public or private?</p>
+            <div class="mt-2 grid gap-2" role="radiogroup" aria-labelledby="privacy-label" onKeyDown={privacyKeyNav}>
               {PRIVACY_OPTIONS.map((t) => {
                 const active = privacy === t.key;
                 return (
-                  <button type="button" onClick={() => choosePrivacy(t.key)} class="rounded-xl border p-3 text-left transition-colors"
+                  <button type="button" role="radio" aria-checked={active} tabIndex={active ? 0 : -1}
+                    onClick={() => choosePrivacy(t.key)} class="rounded-xl border p-3 text-left transition-colors"
                     style={`border-color:${active ? "var(--color-brand)" : "var(--color-line)"}; background:${active ? "var(--color-brand-tint)" : "transparent"}`}>
                     <span class="flex items-center gap-2 text-sm font-semibold">
                       <span class="grid h-3.5 w-3.5 place-items-center rounded-full border" style={`border-color:${active ? "var(--color-brand)" : "var(--color-ink-faint)"}`}>
