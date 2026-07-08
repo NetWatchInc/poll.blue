@@ -150,34 +150,72 @@ export async function createPublicPoll(
   return { id, postUri: post.uri };
 }
 
-/** Write a lightweight poll record to the creator's repo for a *centralized*
- *  (anonymous, IP-tallied) poll. Votes are still counted by the poll.blue
- *  backend — this record exists only so the creator can see and manage the poll
- *  from My Polls. It carries `visibleId` to link back to the DB poll, and is
- *  never tallied via Constellation (options have no per-option at-uris). */
-export async function createCentralizedPollRecord(
+/** Create a unified *private* poll: one blue.poll.poll.poll record (mode
+ *  `centralized`, options stored inline, no per-option records) plus the Bluesky
+ *  post. Votes are tallied in poll.blue's DB keyed by this record's at-uri — so
+ *  there is NO registration step and no visibleId. Addressed like a public poll,
+ *  by `did~rkey`. Returns the shareable id + post uri. */
+export async function createPrivatePoll(
   rpc: Rpc,
   did: string,
-  poll: { question: string; answers: string[]; visibleId: string; endsAt?: string; post?: { uri: string; cid: string } },
-): Promise<{ uri: string; rkey: string }> {
-  const rkey = nextTid();
-  const uri = pollAtUri(did, rkey);
-  const record = {
+  poll: { question: string; answers: string[]; endsAt?: string },
+  makePost: (id: string) => Promise<{ uri: string; cid: string }>,
+): Promise<PublicPoll> {
+  const pollRkey = nextTid();
+  const id = encodePublicId(did, pollRkey);
+  const createdAt = new Date().toISOString();
+  const record: Record<string, unknown> = {
     $type: POLL_NSID,
     spec: POLL_SPEC,
     question: poll.question,
     options: poll.answers.map((text) => ({ text })),
     mode: "centralized",
-    visibleId: poll.visibleId,
-    createdAt: new Date().toISOString(),
+    createdAt,
     ...(poll.endsAt ? { endsAt: poll.endsAt } : {}),
-    ...(poll.post ? { post: poll.post } : {}),
   };
-  const res = await rpc.post("com.atproto.repo.putRecord", {
-    input: { repo: did, collection: POLL_NSID, rkey, record },
+  const created = await rpc.post("com.atproto.repo.putRecord", {
+    input: { repo: did, collection: POLL_NSID, rkey: pollRkey, record },
   });
-  if (!res.ok) throw new Error(res.data?.error ?? "Could not create the poll record.");
-  return { uri, rkey };
+  if (!created.ok) throw new Error(created.data?.error ?? "Could not create the poll.");
+
+  const post = await makePost(id); // Bluesky post; option links use the did~rkey id
+  // Best-effort: link the record to its post for the "open on Bluesky" affordance.
+  rpc
+    .post("com.atproto.repo.putRecord", {
+      input: { repo: did, collection: POLL_NSID, rkey: pollRkey, record: { ...record, post: { uri: post.uri, cid: post.cid } } },
+    })
+    .catch(() => {});
+  return { id, postUri: post.uri };
+}
+
+/** Count votes for a unified private poll from poll.blue's API (keyed by the
+ *  poll's at-uri, server-side). Returns a per-option count array. */
+export async function fetchCentralTally(id: string, optionCount: number): Promise<number[]> {
+  const counts = new Array(optionCount).fill(0) as number[];
+  try {
+    const r = await fetch(`/api/poll/${encodeURIComponent(id)}`);
+    if (!r.ok) return counts;
+    const j = (await r.json()) as { tallies?: Record<string, number> };
+    for (const [k, v] of Object.entries(j.tallies ?? {})) {
+      const idx = parseInt(k, 10) - 1;
+      if (idx >= 0 && idx < optionCount) counts[idx] = v;
+    }
+  } catch { /* keep zeros */ }
+  return counts;
+}
+
+/** Cast an anonymous vote on a unified private poll via poll.blue's API (one per
+ *  IP, no sign-in). Same-origin POST so link crawlers can't vote. */
+export async function castCentralVote(id: string, option: number): Promise<void> {
+  const r = await fetch(`/api/poll/${encodeURIComponent(id)}/vote`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ vote: option }),
+  });
+  if (!r.ok) {
+    const j = await r.json().catch(() => ({}));
+    throw new Error(typeof j.error === "string" ? j.error : "Could not record your vote.");
+  }
 }
 
 /** Delete a poll record from the creator's own repo (used when removing a poll).

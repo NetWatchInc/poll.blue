@@ -3,16 +3,6 @@
 // blue.poll.* facets and the poll.blue/p/{id}/{n} option links the backend
 // verifies against.
 
-const ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
-
-export function generateId(length = 6): string {
-  let result = "";
-  const bytes = new Uint8Array(length);
-  crypto.getRandomValues(bytes);
-  for (let i = 0; i < length; i++) result += ALPHABET[bytes[i] % ALPHABET.length];
-  return result;
-}
-
 export function byteLength(s: string): number {
   return new TextEncoder().encode(s).length;
 }

@@ -33,10 +33,37 @@ END $$;
 CREATE TABLE IF NOT EXISTS votes (
   id      integer GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
   ip      integer,
-  poll_id integer REFERENCES polls(id),
+  poll_id integer REFERENCES polls(id),   -- legacy polls (registered rows)
+  poll_uri text,                          -- unified polls (a blue.poll.poll.poll at-uri)
   vote    smallint
 );
 
--- one vote per IP per poll
+-- Unified polls have no polls row; votes reference the poll's at-uri directly.
+ALTER TABLE votes ADD COLUMN IF NOT EXISTS poll_uri text;
+
+-- one vote per IP per poll — legacy (by poll_id) and unified (by poll_uri).
 CREATE UNIQUE INDEX IF NOT EXISTS votes_idx ON votes (ip, poll_id);
+CREATE UNIQUE INDEX IF NOT EXISTS votes_uri_idx ON votes (ip, poll_uri) WHERE poll_uri IS NOT NULL;
+CREATE INDEX IF NOT EXISTS votes_poll_uri_idx ON votes (poll_uri) WHERE poll_uri IS NOT NULL;
 CREATE INDEX IF NOT EXISTS polls_created_at_idx ON polls (created_at);
+
+-- Mapping of legacy short ids → the poll's at-uri, so existing published /p/{id}
+-- links stay resolvable as we move to at-uri addressing. `kind` records whether
+-- that at-uri is a poll record ('poll') or only an app.bsky.feed.post ('post'),
+-- since old polls that never got a blue.poll.poll.poll record only have the post.
+-- This is server-side only: did~rkey URLs are reserved for poll records, so a
+-- 'post' at-uri never becomes a URL (which would collide across collections).
+CREATE TABLE IF NOT EXISTS legacy_polls (
+  visible_id text PRIMARY KEY,
+  at_uri     text NOT NULL,
+  kind       text NOT NULL CHECK (kind IN ('poll', 'post'))
+);
+
+-- Backfill from existing registered polls (idempotent).
+INSERT INTO legacy_polls (visible_id, at_uri, kind)
+SELECT visible_id,
+       COALESCE(blue_poll_uri, post_uri),
+       CASE WHEN blue_poll_uri IS NOT NULL THEN 'poll' ELSE 'post' END
+FROM polls
+WHERE COALESCE(blue_poll_uri, post_uri) IS NOT NULL
+ON CONFLICT (visible_id) DO NOTHING;

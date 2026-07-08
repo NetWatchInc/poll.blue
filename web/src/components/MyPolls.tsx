@@ -14,14 +14,13 @@ import {
 } from "../lib/atpoll";
 
 interface CreatedPoll {
-  id: string; // link target: visibleId (centralized) or did~rkey (network)
+  id: string; // link target + backend-delete id: legacy visibleId or did~rkey
   question: string;
   endsAt?: string;
   createdAt?: string;
-  centralized?: boolean; // anonymous / IP-tallied poll with a manage-able record
+  manageable?: boolean; // private (centralized) poll — deletable here
   did?: string; // repo holding the record (for delete)
   rkey?: string; // record key (for delete)
-  visibleId?: string; // poll.blue DB id (for backend delete)
 }
 interface VotedPoll {
   id: string;
@@ -58,16 +57,17 @@ export default function MyPolls() {
             const parsed = parsePollAtUri(r.uri);
             if (!parsed) return null;
             const v = r.value as { question?: string; endsAt?: string; createdAt?: string; mode?: string; visibleId?: string };
-            const centralized = v.mode === "centralized" && !!v.visibleId;
+            // Private polls (mode centralized) are manageable here — legacy ones
+            // are addressed by their DB visibleId, unified ones by did~rkey.
+            const manageable = v.mode === "centralized";
             return {
-              id: centralized ? v.visibleId! : encodePublicId(parsed.did, parsed.rkey),
+              id: manageable && v.visibleId ? v.visibleId : encodePublicId(parsed.did, parsed.rkey),
               question: v.question ?? "(untitled)",
               endsAt: v.endsAt,
               createdAt: v.createdAt,
-              centralized,
+              manageable,
               did: parsed.did,
               rkey: parsed.rkey,
-              visibleId: v.visibleId,
             };
           })
           .filter(Boolean) as CreatedPoll[];
@@ -108,10 +108,11 @@ export default function MyPolls() {
     })();
   }, [account?.did]);
 
-  // Delete an anonymous/centralized poll: remove the repo record (only the owner
-  // can — this is the backend's proof of ownership), then purge the DB poll.
+  // Delete a private poll: remove the repo record (only the owner can — this is
+  // the backend's proof of ownership), then purge its votes from the DB (keyed by
+  // visibleId for legacy polls, by did~rkey at-uri for unified ones).
   async function handleDelete(p: CreatedPoll) {
-    if (!p.centralized || !p.did || !p.rkey || !p.visibleId) return;
+    if (!p.manageable || !p.did || !p.rkey) return;
     setDeleteError("");
     setConfirmDelete(null);
     setDeleting(p.rkey);
@@ -119,7 +120,7 @@ export default function MyPolls() {
       const agent = await getAgent();
       if (!agent) throw new Error("Your session expired — sign in again.");
       await deletePollRecord(makeRpc(agent), agent.sub, p.rkey);
-      const resp = await fetch(`/api/poll/${encodeURIComponent(p.visibleId)}`, { method: "DELETE" });
+      const resp = await fetch(`/api/poll/${encodeURIComponent(p.id)}`, { method: "DELETE" });
       if (!resp.ok && resp.status !== 404) {
         const j = await resp.json().catch(() => ({}));
         throw new Error(typeof j.error === "string" ? j.error : "Removed from your repo, but the backend couldn't purge it.");
@@ -203,10 +204,10 @@ export default function MyPolls() {
                   <a href={`/p/${p.id}`} class="min-w-0 flex-1 font-medium hover:underline">{p.question}</a>
                   <div class="flex shrink-0 items-center gap-3">
                     <span class="text-xs font-semibold text-[var(--color-ink-faint)]"
-                      data-tip={p.centralized ? "Anonymous poll — tallied centrally by poll.blue" : undefined}>
-                      {p.centralized ? "anonymous" : p.endsAt ? (closed ? "closed" : "open") : "no end date"}
+                      data-tip={p.manageable ? "Anonymous poll — counted best-effort by poll.blue" : undefined}>
+                      {p.manageable ? "anonymous" : p.endsAt ? (closed ? "closed" : "open") : "no end date"}
                     </span>
-                    {p.centralized && (isConfirming ? (
+                    {p.manageable && (isConfirming ? (
                       <span class="flex items-center gap-2">
                         <button type="button" class="text-xs font-semibold text-red-600 hover:underline disabled:opacity-50" disabled={isDeleting} onClick={() => handleDelete(p)}>
                           {isDeleting ? "Deleting…" : "Delete?"}

@@ -3,7 +3,6 @@ import { serveStatic } from "@hono/node-server/serve-static";
 import { Hono } from "hono";
 import { config, dbDescription } from "./config.ts";
 import { migrate, pool } from "./db.ts";
-import { register } from "./routes/register.ts";
 import { getResults } from "./routes/results.ts";
 import { vote } from "./routes/vote.ts";
 import { deletePoll } from "./routes/delete.ts";
@@ -29,7 +28,6 @@ app.get("/.well-known/did.json", (c) =>
 
 app.get("/xrpc/app.bsky.feed.getFeedSkeleton", (c) => c.json({ feed: [] }));
 
-app.post("/api/poll/register", register);
 app.get("/api/poll/:id", getResults);
 // Voting is a same-origin JS POST (so firehose/crawler GETs on the link can't
 // vote). The option links themselves serve the results page below.

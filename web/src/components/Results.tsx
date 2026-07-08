@@ -6,10 +6,12 @@ import { makeRpc } from "../lib/oauth";
 import FlipCard from "./FlipCard";
 import {
   type Audience,
+  castCentralVote,
   castVote,
   clearPendingVote,
   decodePublicId,
   deleteVote,
+  fetchCentralTally,
   getPollRecord,
   isEligible,
   isPublicId,
@@ -41,8 +43,9 @@ interface PollResults {
   audience?: Audience;
   cast?: number; // total votes before gating (gated), or sealed participation count
   voters?: string[][]; // sample of voter DIDs per option (index 0 = option 1)
-  mode?: string; // "public" | "sealed"
+  mode?: string; // "public" | "sealed" | "centralized"
   sealed?: { round?: number; chain?: string };
+  central?: boolean; // unified private poll: DB-tallied by at-uri, anonymous voting
 }
 
 type Status = "loading" | "ok" | "notfound" | "error";
@@ -183,6 +186,14 @@ export default function Results() {
           // renders (and so it can't be dropped by racing the tally's setData).
           resolveDisplayHandle(dec.did).then((h) => h && setCreatorHandle(h));
 
+          if (rec.value.mode === "centralized") {
+            // Unified private poll (no visibleId): DB-tallied by at-uri, anonymous
+            // link voting. Question/options come from the record above.
+            const counts = await fetchCentralTally(id, answers.length);
+            setData({ ...base, isPublic: false, central: true, mode: "centralized", results: [0, ...counts] });
+            return;
+          }
+
           if (rec.value.mode === "sealed") {
             const audience = rec.value.audience;
             const closedNow = !!(rec.value.endsAt && Date.now() >= new Date(rec.value.endsAt).getTime());
@@ -243,6 +254,11 @@ export default function Results() {
     const creatorDid = decodePublicId(id)?.did;
     const tick = async () => {
       try {
+        if (data.central) {
+          const counts = await fetchCentralTally(id, data.answers.length);
+          setData((d) => (d ? { ...d, results: [0, ...counts] } : d));
+          return;
+        }
         if (sealed) {
           // Only participation is knowable while open; the tally reveals at close.
           if (pollUri && !(endsAtMs && Date.now() >= endsAtMs)) {
@@ -264,7 +280,7 @@ export default function Results() {
     const onVis = () => { if (document.visibilityState === "visible") tick(); };
     document.addEventListener("visibilitychange", onVis);
     return () => { clearInterval(iv); document.removeEventListener("visibilitychange", onVis); };
-  }, [publicPoll, data?.answers.length, account?.did, data?.mode]);
+  }, [publicPoll, data?.answers.length, account?.did, data?.mode, data?.central]);
 
   // When a sealed poll crosses its close time while open in the browser, reveal.
   const sealedRevealedRef = useRef(false);
@@ -318,6 +334,11 @@ export default function Results() {
     if (isClosed(data)) return setCastError("This poll has closed.");
     if (!ready) return;
     setCastError("");
+    // Private poll: anonymous API vote, one per person (can't change or unvote).
+    if (data.central) {
+      if (myVote > 0) return;
+      return void performCentralVote(n);
+    }
     // Tapping the option you already picked unchecks it — i.e. removes your vote.
     if (n === myVote) return void removeVote();
     if (!account) {
@@ -329,8 +350,29 @@ export default function Results() {
     if (data.audience && myEligible === false) {
       return setCastError(`Only ${gateAudienceLabel(data.audience)} can vote in this poll.`);
     }
-    if (skipConfirm) performVote(n);
-    else setConfirmOption(n);
+    // A plain verified vote casts immediately — it's public but easy to change or
+    // remove. Only a sealed (secret ballot) vote confirms first, since it's an
+    // encrypted commitment you can't inspect afterward.
+    if (data.mode === "sealed" && !skipConfirm) setConfirmOption(n);
+    else performVote(n);
+  }
+
+  // Anonymous vote on a private poll via poll.blue's API (no sign-in).
+  async function performCentralVote(n: number) {
+    if (!data) return;
+    interactedRef.current = true;
+    setMyVote(n); // optimistic
+    try {
+      await castCentralVote(id, n);
+      setVoteCast(true);
+      setCastFlash(true);
+      setTimeout(() => setCastFlash(false), 550);
+      const counts = await fetchCentralTally(id, data.answers.length);
+      setData((d) => (d ? { ...d, results: [0, ...counts] } : d));
+    } catch (e) {
+      setMyVote(0);
+      setCastError((e as Error).message || "Could not record your vote.");
+    }
   }
 
   // Actually write the vote record.
@@ -447,20 +489,22 @@ export default function Results() {
   const d = data!;
   // Public polls carry the creator's DID in posted_by; show the resolved handle
   // instead (private/legacy polls already store a handle server-side).
-  const creator = d.isPublic ? creatorHandle : (d.posted_by ?? "");
+  const creator = (d.isPublic || d.central) ? creatorHandle : (d.posted_by ?? "");
   const view = withMyVote(d, myVote, account?.did);
   const votes = view.results.slice(1);
   const total = votes.reduce((a, b) => a + b, 0);
   const interactions = view.results.reduce((a, b) => a + b, 0);
   const leader = total > 0 ? Math.max(...votes) : -1;
   const created = d.created_at ? new Date(d.created_at) : null;
-  const highlight = d.isPublic ? myVote : voted;
+  const highlight = (d.isPublic || d.central) ? myVote : voted;
   const closed = !!(d.endsAt && now >= new Date(d.endsAt).getTime());
   const remaining = d.endsAt ? new Date(d.endsAt).getTime() - now : 0;
   const sealed = d.mode === "sealed";
   const sealedOpen = sealed && !closed;
   const ineligible = !!d.audience && myEligible === false;
-  const canVote = d.isPublic && !closed && !ineligible;
+  // Private polls allow one vote per person (no change/unvote); network polls can
+  // switch or remove their vote any time.
+  const canVote = (d.isPublic || d.central) && !closed && !ineligible && (d.central ? myVote === 0 : true);
   const showLoginBanner = publicPoll && needLogin && !voteCast;
   const pdslsUrl = d.pollUri ? `https://pdsls.dev/${d.pollUri}` : undefined;
   const votePath = sealed || d.optionUris?.some(Boolean) ? "blue.poll.poll.vote:poll.uri" : "blue.poll.poll.vote:subject.uri";
@@ -485,8 +529,8 @@ export default function Results() {
         <div class="flex items-start justify-between gap-4">
           <h1 class="text-3xl leading-tight sm:text-4xl">{d.question}</h1>
           <span class="flex shrink-0 items-center gap-2">
-            {d.isPublic && <span class="rounded-full bg-amber-100 px-1.5 py-0.5 text-[0.58rem] font-extrabold uppercase tracking-wider text-amber-700" title="On-network polling is an alpha feature">Alpha</span>}
-            <span class="pill">{sealed ? "🔒 Sealed poll" : d.isPublic ? "Public poll" : "Private poll"}</span>
+            {(d.isPublic || d.central) && <span class="rounded-full bg-amber-100 px-1.5 py-0.5 text-[0.58rem] font-extrabold uppercase tracking-wider text-amber-700" title="On-network polling is an alpha feature">Alpha</span>}
+            <span class="pill">{sealed ? "🔒 Sealed poll" : d.isPublic ? "Verified poll" : "Anonymous poll"}</span>
           </span>
         </div>
 
@@ -494,8 +538,10 @@ export default function Results() {
           {sealed
             ? <span>Votes are timelock-encrypted — results reveal when the poll closes, then anyone can decrypt & tally.</span>
             : d.isPublic
-              ? <span>Every vote is a public record on the voter's own account — tap an avatar to see who.</span>
-              : <span>Anonymous voting, tallied by poll.blue (legacy).</span>}
+              ? <span>Every vote is a signed, provable record on the voter's own account — tap an avatar to see who.</span>
+              : d.central
+                ? <span>Anonymous voting — no sign-in, counted best-effort by poll.blue. No record of who voted for what.</span>
+                : <span>Anonymous voting, tallied by poll.blue (legacy).</span>}
           {d.audience && (
             <span class="font-semibold text-[var(--color-brand-deep)]">
               🔒 {d.audience.gate === "followers" ? "Followers only" : "List only"}
@@ -522,7 +568,7 @@ export default function Results() {
           <div class="mt-6 rounded-2xl border p-4" style="border-color: var(--color-brand); background: var(--color-brand-tint)">
             <p class="font-semibold">Sign in to vote</p>
             <p class="mt-1 text-sm text-[var(--color-ink-soft)]">
-              Public polls record your vote on your own account. Enter your handle to continue.
+              Verified polls record your vote on your own account — provable, one per account. Enter your handle to continue.
             </p>
             <div class="mt-3 flex flex-col gap-2 sm:flex-row">
               <input
@@ -543,9 +589,11 @@ export default function Results() {
 
         {voteCast && (
           <p class="mt-6 rounded-xl px-4 py-2.5 text-sm font-medium" style="background: var(--color-brand-tint); color: var(--color-brand-deep)">
-            {sealed
-              ? "Your vote is sealed 🔒 — it stays encrypted until the poll closes, then reveals with everyone else's. Tap another option to change it, or tap the same one again to withdraw."
-              : "Vote recorded to your account ✓ — tap another option to change it, or tap the same one again to remove it."}
+            {d.central
+              ? "Vote counted ✓ — anonymous, one per person. Thanks!"
+              : sealed
+                ? "Your vote is sealed 🔒 — it stays encrypted until the poll closes, then reveals with everyone else's. Tap another option to change it, or tap the same one again to withdraw."
+                : "Vote recorded to your account ✓ — tap another option to change it, or tap the same one again to remove it."}
           </p>
         )}
         {castError && <p class="mt-6 text-sm font-medium text-red-600">{castError}</p>}
@@ -654,9 +702,9 @@ export default function Results() {
               ? `${(d.cast ?? 0).toLocaleString()} ${(d.cast ?? 0) === 1 ? "vote" : "votes"} sealed`
               : (
                 <>
-                  {interactions.toLocaleString()} {d.isPublic ? (interactions === 1 ? "vote" : "votes") : (interactions === 1 ? "interaction" : "interactions")}
+                  {interactions.toLocaleString()} {(d.isPublic || d.central) ? (interactions === 1 ? "vote" : "votes") : (interactions === 1 ? "interaction" : "interactions")}
                   {d.cast != null && d.cast !== interactions && <span class="text-[var(--color-ink-faint)]"> of {d.cast.toLocaleString()} cast</span>}
-                  {d.isPublic && !sealed && !closed && <span class="ml-2 text-[var(--color-ink-faint)]">· live ⟳</span>}
+                  {(d.isPublic || d.central) && !sealed && !closed && <span class="ml-2 text-[var(--color-ink-faint)]">· live ⟳</span>}
                 </>
               )}
           </span>
@@ -676,19 +724,21 @@ export default function Results() {
             <div>
               <h2 class="text-2xl leading-none">{d.isPublic ? "Verify this poll" : "About this poll"}</h2>
               <p class="mt-1 text-[0.65rem] font-bold uppercase tracking-[0.18em] text-[var(--color-ink-faint)]">
-                {d.isPublic ? (sealed ? "Timelock · self-verifiable" : "On-network · self-verifiable") : "Legacy · centrally tallied"}
+                {d.isPublic ? (sealed ? "Timelock · self-verifiable" : "On-network · self-verifiable") : d.central ? "On-network record · private votes" : "Legacy · centrally tallied"}
               </p>
             </div>
           </div>
           <p class="mt-3 text-sm text-[var(--color-ink-soft)]">
             {d.isPublic
               ? <>Everything here is public on the AT&nbsp;Protocol network — you don't have to trust poll.blue; recount it yourself.</>
-              : <>A legacy, centrally-tallied poll: votes are counted by poll.blue's backend (one per person, deduplicated by IP) rather than recorded on the network.</>}
+              : d.central
+                ? <>The poll itself is a public record on the AT&nbsp;Protocol network, but votes are counted privately by poll.blue (one per person, by IP) — so no one can see who voted for what.</>
+                : <>A legacy, centrally-tallied poll: votes are counted by poll.blue's backend (one per person, deduplicated by IP) rather than recorded on the network.</>}
           </p>
 
-          <h3 class="tech-head mt-6 text-xs font-bold uppercase tracking-widest text-[var(--color-ink-faint)]">Poll {d.isPublic ? "record" : "details"}</h3>
+          <h3 class="tech-head mt-6 text-xs font-bold uppercase tracking-widest text-[var(--color-ink-faint)]">Poll {(d.isPublic || d.central) ? "record" : "details"}</h3>
           <dl class="receipt mt-2 space-y-1.5 p-3.5 text-sm">
-            <div class="flex justify-between gap-3"><dt class="text-[var(--color-ink-faint)]">Mode</dt><dd class="font-medium">{d.isPublic ? (sealed ? "sealed · timelock" : d.audience ? "public · gated" : "public") : "centralized · poll.blue"}</dd></div>
+            <div class="flex justify-between gap-3"><dt class="text-[var(--color-ink-faint)]">Mode</dt><dd class="font-medium">{d.isPublic ? (sealed ? "sealed · timelock" : d.audience ? "public · gated" : "public") : d.central ? "centralized · on-network record" : "centralized · poll.blue"}</dd></div>
             {d.created_at && <div class="flex justify-between gap-3"><dt class="text-[var(--color-ink-faint)]">Created</dt><dd>{new Date(d.created_at).toLocaleString()}</dd></div>}
             {d.endsAt && <div class="flex justify-between gap-3"><dt class="text-[var(--color-ink-faint)]">{sealed ? "Reveals" : "Closes"}</dt><dd>{new Date(d.endsAt).toLocaleString()}</dd></div>}
           </dl>
@@ -739,30 +789,24 @@ export default function Results() {
       </div>
       </div>
 
+      {/* Only sealed (secret ballot) votes confirm first — plain verified votes
+          cast immediately (public, but easy to change or remove). */}
       {confirmOption > 0 && (
         <div class="fixed inset-0 z-50 grid place-items-center p-4" style="background: rgba(15,23,42,0.45)" onClick={() => setConfirmOption(0)}>
           <div class="card w-full max-w-md p-6 sm:p-7" onClick={(e) => e.stopPropagation()}>
-            <h2 class="text-2xl">{sealed ? "Seal your vote?" : "Vote publicly?"}</h2>
-            {sealed ? (
-              <p class="mt-3 text-[var(--color-ink-soft)]">
-                This writes an <span class="font-semibold">encrypted record</span> to your account
-                {account ? <span class="font-semibold"> @{account.handle}</span> : null} for
-                <span class="font-semibold text-[var(--color-ink)]"> "{d.answers[confirmOption - 1]}"</span>. Your choice stays secret — even from you — until the poll closes, then it's revealed and anyone can tally. You can change it before close.
-              </p>
-            ) : (
-              <p class="mt-3 text-[var(--color-ink-soft)]">
-                This writes a <span class="font-semibold">public record</span> to your account
-                {account ? <span class="font-semibold"> @{account.handle}</span> : null}. Anyone on the network can see that you voted for
-                <span class="font-semibold text-[var(--color-ink)]"> "{d.answers[confirmOption - 1]}"</span>. You can change or remove it anytime.
-              </p>
-            )}
+            <h2 class="text-2xl">Seal your vote?</h2>
+            <p class="mt-3 text-[var(--color-ink-soft)]">
+              This writes an <span class="font-semibold">encrypted record</span> to your account
+              {account ? <span class="font-semibold"> @{account.handle}</span> : null} for
+              <span class="font-semibold text-[var(--color-ink)]"> "{d.answers[confirmOption - 1]}"</span>. Your choice stays secret — even from you — until the poll closes, then it's revealed and anyone can tally. You can change it before close.
+            </p>
             <label class="mt-5 flex cursor-pointer items-center gap-2.5 text-sm text-[var(--color-ink-soft)]">
               <input type="checkbox" checked={dontAsk} onChange={(e) => setDontAsk((e.target as HTMLInputElement).checked)} />
               Don't show this again
             </label>
             <div class="mt-6 flex justify-end gap-3">
               <button class="btn btn-ghost" onClick={() => setConfirmOption(0)}>Cancel</button>
-              <button class="btn btn-primary" onClick={confirmVote}>{sealed ? "Seal vote" : "Vote publicly"}</button>
+              <button class="btn btn-primary" onClick={confirmVote}>Seal vote</button>
             </div>
           </div>
         </div>

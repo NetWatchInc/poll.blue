@@ -34,18 +34,6 @@ export async function startBot(): Promise<void> {
   setInterval(tick, 10_000);
 }
 
-// Bot like + repost of a freshly-registered (OAuth) poll post.
-export async function likeRepost(postUri: string, cid: string): Promise<void> {
-  if (!agent) return;
-  const repo = agent.session?.did;
-  const createdAt = new Date().toISOString();
-  const subject = { uri: postUri, cid };
-  await Promise.all([
-    agent.app.bsky.feed.like.create({ repo }, { subject, createdAt }),
-    agent.app.bsky.feed.repost.create({ repo }, { subject, createdAt }),
-  ]);
-}
-
 async function postResults(): Promise<void> {
   const polls = await query<DbPoll>(
     `SELECT * FROM polls WHERE results_posted = false AND created_at < NOW() - INTERVAL '24 hours'`,

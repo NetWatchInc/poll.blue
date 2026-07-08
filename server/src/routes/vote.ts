@@ -3,6 +3,8 @@ import { getCookie, setCookie } from "hono/cookie";
 import { getConnInfo } from "@hono/node-server/conninfo";
 import { pool, query } from "../db.ts";
 import { isDev } from "../config.ts";
+import { isPublicId, pollUriFromId } from "../poll-id.ts";
+import { resolvePollShape } from "../poll-record.ts";
 
 // Hash any IP (v4 or v6) to a signed int32 so it fits votes.ip and dedups
 // uniformly.
@@ -43,6 +45,10 @@ export async function vote(c: Context) {
   const id = c.req.param("id") ?? "";
   const body = (await c.req.json().catch(() => ({}))) as { vote?: unknown };
   const voteNum = parseInt(String(body?.vote), 10);
+
+  // Unified poll (did~rkey): no registration row — count against the poll's
+  // at-uri after lazily verifying the record resolves and is DB-tallied.
+  if (isPublicId(id)) return voteUnified(c, id, voteNum);
 
   const pr = await query<{ id: number; answers: string[] }>(
     `SELECT id, answers FROM polls WHERE visible_id = $1`,
@@ -87,6 +93,42 @@ export async function vote(c: Context) {
     await client.query("ROLLBACK").catch(() => {}); // duplicate (ip, poll) — ignore
   } finally {
     client.release();
+  }
+  return c.json({ ok: true, vote: voteNum });
+}
+
+// Vote on a unified (registration-free) private poll — one vote per IP, keyed by
+// the poll's at-uri. There is no polls row and no denormalized results array;
+// the tally is counted from `votes` on read.
+async function voteUnified(c: Context, id: string, voteNum: number) {
+  const pollUri = pollUriFromId(id);
+  if (!pollUri) return c.json({ error: "invalid poll id" }, 400);
+
+  const shape = await resolvePollShape(pollUri);
+  if (!shape) return c.json({ error: "poll not found" }, 404);
+  if (!shape.centralized) return c.json({ error: "this poll is tallied on the network, not here" }, 400);
+  if (Number.isNaN(voteNum) || voteNum < 1 || voteNum > shape.optionCount) {
+    return c.json({ error: "invalid vote" }, 400);
+  }
+
+  const cookieName = `pb_voted_${id}`;
+  if (getCookie(c, cookieName) !== undefined) return c.json({ ok: true, deduped: true });
+
+  const ip = clientIp(c);
+  try {
+    await query(
+      `INSERT INTO votes (ip, poll_uri, vote) VALUES ($1, $2, $3)
+       ON CONFLICT (ip, poll_uri) WHERE poll_uri IS NOT NULL DO NOTHING`,
+      [ip ? ipKey(ip) : null, pollUri, voteNum],
+    );
+    setCookie(c, cookieName, String(voteNum), {
+      path: "/",
+      maxAge: 60 * 60 * 24 * 400,
+      httpOnly: true,
+      sameSite: "Lax",
+    });
+  } catch (e) {
+    console.error("vote (unified): insert failed:", e);
   }
   return c.json({ ok: true, vote: voteNum });
 }

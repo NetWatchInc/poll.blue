@@ -2,8 +2,8 @@ import { useEffect, useState } from "preact/hooks";
 import { useStore } from "@nanostores/preact";
 import { $account, $authReady, getAgent, initSession, signIn } from "../lib/session";
 import { makeRpc } from "../lib/oauth";
-import { composedText, generateId, generatePollText, graphemeLen, postUriToBskyLink } from "../lib/poll";
-import { type Audience, clearPendingVote, createCentralizedPollRecord, createPublicPoll, getPendingVote, listRecords, POLL_SPEC } from "../lib/atpoll";
+import { composedText, generatePollText, graphemeLen, postUriToBskyLink } from "../lib/poll";
+import { type Audience, clearPendingVote, createPrivatePoll, createPublicPoll, getPendingVote, listRecords, POLL_SPEC } from "../lib/atpoll";
 import { detectFacets } from "../lib/richtext";
 import Composer from "./Composer";
 import FlipCard from "./FlipCard";
@@ -24,28 +24,36 @@ const DURATIONS: { key: string; label: string; ms: number }[] = [
 
 interface Img { file: File; alt: string; url: string }
 
-// The one choice that actually matters to a normal user: are the voters' votes
-// public or private? Everything technical (on-network records vs centralized
-// tally, per-account dedup, sealing) follows from that. Public voting is the new
-// on-network path and is still alpha.
-type Privacy = "public" | "private";
-const PRIVACY_OPTIONS: { key: Privacy; icon: string; title: string; alpha: boolean; blurb: string }[] = [
-  { key: "public", icon: "🌐", title: "Public votes", alpha: true, blurb: "Everyone can see who voted for what. Each vote is a signed record on the voter's own Bluesky account." },
-  { key: "private", icon: "🕶️", title: "Private votes", alpha: false, blurb: "No one can see how anyone voted. No sign-in needed — poll.blue counts them, one per person." },
+// The one choice that actually matters to a normal user: how much do you trust
+// the count? "Verified" votes are signed records on the network — independently
+// provable, one per account (and public). "Anonymous" votes need no sign-in and
+// are counted best-effort by poll.blue. Everything technical (on-network records
+// vs centralized tally, per-account dedup, sealing) follows from that. Verified is
+// the new on-network path and is still alpha.
+type VoteModel = "verified" | "anonymous";
+// `tip` is the short balloon-help summary; the full technical breakdown lives on
+// the card's flip side ("What this writes").
+const VOTE_MODELS: { key: VoteModel; icon: string; title: string; alpha: boolean; blurb: string; tip: string }[] = [
+  { key: "verified", icon: "🛡️", title: "Verified", alpha: true,
+    blurb: "Each vote is a signed record on the voter's own account — independently provable, one per account. Votes are public.",
+    tip: "Poll and every vote are records on the AT Protocol network; the tally is just a count of vote backlinks, so anyone can recount it. Votes are public." },
+  { key: "anonymous", icon: "🕶️", title: "Anonymous", alpha: false,
+    blurb: "One tap to vote — no sign-in, no record of who voted. Counted best-effort by poll.blue.",
+    tip: "The poll is a record on-network, but votes are tallied in poll.blue's database keyed to the poll's at-uri — one per person by IP, and no record of who voted for what." },
 ];
 
 // Plain-language tradeoffs, shown on demand under the two choices.
-const PRIVACY_DETAILS: { key: Privacy; pros: string[] }[] = [
-  { key: "public", pros: [
-    "Anyone can recount it themselves — no need to trust poll.blue",
+const VOTE_MODEL_DETAILS: { key: VoteModel; pros: string[] }[] = [
+  { key: "verified", pros: [
+    "Provable: anyone can recount it — no need to trust poll.blue",
     "One vote per account (voters sign in with Bluesky)",
-    "The catch: everyone can see how each person voted",
+    "The catch: votes are public — everyone sees how each person voted",
     "Optional secret ballot hides results until the poll closes",
   ] },
-  { key: "private", pros: [
-    "No account or sign-in needed to vote — just tap",
-    "Individual votes are never shown to anyone",
-    "Counted by poll.blue (one per person, best-effort)",
+  { key: "anonymous", pros: [
+    "No account or sign-in needed — just tap to vote",
+    "No public record of who voted for what",
+    "Best-effort count by poll.blue (one per person, by IP)",
     "The catch: you can't independently verify the tally",
   ] },
 ];
@@ -56,15 +64,16 @@ function AlphaTag() {
   );
 }
 
-// Remember the creator's last public/private choice across sessions, and default
-// to PRIVATE so anyone who's been posting anonymous polls is never silently
-// switched onto public, on-network voting without choosing it.
-const PRIVACY_KEY = "pb_privacy";
+// Remember the creator's last verified/anonymous choice across sessions, and
+// default to ANONYMOUS so anyone who's been posting anonymous polls is never
+// silently switched onto verified, on-network voting without choosing it. (Key
+// name kept + old "public"/"private" values still read, for back-compat.)
+const VOTE_MODEL_KEY = "pb_privacy";
 function readStoredRecording(): "network" | "legacy" {
   try {
-    const v = localStorage.getItem(PRIVACY_KEY);
-    if (v === "public") return "network";
-    if (v === "private") return "legacy";
+    const v = localStorage.getItem(VOTE_MODEL_KEY);
+    if (v === "verified" || v === "public") return "network";
+    if (v === "anonymous" || v === "private") return "legacy";
   } catch { /* ignore */ }
   return "legacy";
 }
@@ -101,20 +110,20 @@ export default function CreatePoll() {
   // "Public vs private" is derived from the recording mode; choosing it just sets
   // the underlying knobs, so post() and the record shapes are unchanged. Secret
   // ballot is a refinement of public voting (results sealed until close).
-  const privacy: Privacy = recording === "network" ? "public" : "private";
-  function choosePrivacy(p: Privacy) {
-    try { localStorage.setItem(PRIVACY_KEY, p); } catch { /* ignore */ }
-    if (p === "public") setRecording("network");
+  const voteModel: VoteModel = recording === "network" ? "verified" : "anonymous";
+  function chooseVoteModel(m: VoteModel) {
+    try { localStorage.setItem(VOTE_MODEL_KEY, m); } catch { /* ignore */ }
+    if (m === "verified") setRecording("network");
     else { setRecording("legacy"); setResults("live"); setGate("none"); }
   }
-  // Arrow-key navigation for the public/private radiogroup (a11y).
-  function privacyKeyNav(e: KeyboardEvent) {
+  // Arrow-key navigation for the verified/anonymous radiogroup (a11y).
+  function voteModelKeyNav(e: KeyboardEvent) {
     if (!["ArrowDown", "ArrowRight", "ArrowUp", "ArrowLeft"].includes(e.key)) return;
     e.preventDefault();
-    const order: Privacy[] = ["public", "private"];
+    const order: VoteModel[] = ["verified", "anonymous"];
     const dir = e.key === "ArrowDown" || e.key === "ArrowRight" ? 1 : -1;
-    const next = order[(order.indexOf(privacy) + dir + order.length) % order.length];
-    choosePrivacy(next);
+    const next = order[(order.indexOf(voteModel) + dir + order.length) % order.length];
+    chooseVoteModel(next);
     const btns = (e.currentTarget as HTMLElement).querySelectorAll<HTMLButtonElement>('[role="radio"]');
     btns[order.indexOf(next)]?.focus();
   }
@@ -253,28 +262,16 @@ export default function CreatePoll() {
         );
         setResult({ postUri, visibleId: id });
       } else {
-        const visibleId = generateId(6);
-        const post = await createPost(visibleId);
-        // Also drop a manage-able record in the creator's repo so this anonymous
-        // poll shows up in My Polls (best-effort — the poll works either way, it
-        // just won't be manageable if this write fails).
-        let bluePollUri: string | undefined;
-        try {
-          const { uri } = await createCentralizedPollRecord(rpc, agent.sub, {
-            question: bodyText, answers: activeOptions, visibleId, post,
-          });
-          bluePollUri = uri;
-        } catch { /* not fatal — poll is still live and tallied centrally */ }
-        const resp = await fetch("/api/poll/register", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ question: bodyText, answers: activeOptions, visible_id: visibleId, post_uri: post.uri, blue_poll_uri: bluePollUri }),
-        });
-        if (!resp.ok) {
-          const j = await resp.json().catch(() => ({}));
-          throw new Error(typeof j.error === "string" ? j.error : "Failed to register the poll.");
-        }
-        setResult({ postUri: post.uri, visibleId });
+        // Private poll: one blue.poll.poll.poll record (mode centralized) + the
+        // post, addressed by did~rkey. No registration — votes are tallied in
+        // poll.blue's DB by the record's at-uri. The record write must succeed,
+        // since the poll is addressed by it.
+        const { id, postUri } = await createPrivatePoll(
+          rpc, agent.sub,
+          { question: bodyText, answers: activeOptions },
+          createPost,
+        );
+        setResult({ postUri, visibleId: id });
       }
     } catch (e) {
       setError((e as Error).message || "Something went wrong.");
@@ -428,18 +425,15 @@ export default function CreatePoll() {
           )}
         </div>
 
-        {/* Loud, unmissable reminder of which kind of poll is about to go out —
-            so nobody posts publicly (or privately) by accident. */}
-        <div class="mt-6 flex flex-wrap items-center gap-x-2 gap-y-1 rounded-2xl border-2 px-4 py-3 text-sm"
-          style={privacy === "public"
-            ? "border-color: var(--color-brand); background: var(--color-brand-tint); color: var(--color-brand-ink)"
-            : "border-color: #94a3b8; background: #eef2f7; color: #334155"}>
-          <span class="text-lg leading-none">{privacy === "public" ? "🌐" : "🕶️"}</span>
-          <span class="font-extrabold uppercase tracking-wide">{privacy === "public" ? "Public poll" : "Private poll"}</span>
-          <span class="opacity-80">— {privacy === "public" ? "everyone can see how each person voted" : "individual votes stay anonymous"}.</span>
-          <button type="button" class="font-bold underline underline-offset-2 hover:no-underline"
-            onClick={() => choosePrivacy(privacy === "public" ? "private" : "public")}>
-            Switch to {privacy === "public" ? "private" : "public"}
+        {/* The important warning at post time is *visibility*: will voters' votes
+            be public or private? A molded placard, styled to match the page. */}
+        <div class={`mode-plate mt-6 flex flex-wrap items-center gap-x-2.5 gap-y-1 px-3.5 py-2.5 text-sm ${voteModel === "verified" ? "mode-plate--public" : "mode-plate--private"}`}>
+          <span class="mode-emblem" aria-hidden="true">{voteModel === "verified" ? "👁️" : "🕶️"}</span>
+          <span class="font-extrabold uppercase tracking-wide">{voteModel === "verified" ? "Public votes" : "Private votes"}</span>
+          <span class="opacity-80">— {voteModel === "verified" ? "everyone can see how each person voted" : "no one can see who voted for what"}.</span>
+          <button type="button" class="ml-auto font-bold underline underline-offset-2 hover:no-underline"
+            onClick={() => chooseVoteModel(voteModel === "verified" ? "anonymous" : "verified")}>
+            Make it {voteModel === "verified" ? "private" : "public"}
           </button>
         </div>
 
@@ -467,13 +461,14 @@ export default function CreatePoll() {
           <>
             <span class="pill">Poll setup</span>
 
-            <p id="privacy-label" class="mt-5 text-sm font-semibold text-[var(--color-ink-soft)]">Are votes public or private?</p>
-            <div class="mt-2 grid gap-2" role="radiogroup" aria-labelledby="privacy-label" onKeyDown={privacyKeyNav}>
-              {PRIVACY_OPTIONS.map((t) => {
-                const active = privacy === t.key;
+            <p id="votemodel-label" class="mt-5 text-sm font-semibold text-[var(--color-ink-soft)]">How are votes counted?</p>
+            <div class="mt-2 grid gap-2" role="radiogroup" aria-labelledby="votemodel-label" onKeyDown={voteModelKeyNav}>
+              {VOTE_MODELS.map((t) => {
+                const active = voteModel === t.key;
                 return (
                   <button type="button" role="radio" aria-checked={active} tabIndex={active ? 0 : -1}
-                    onClick={() => choosePrivacy(t.key)} class="rounded-xl border p-3 text-left transition-colors"
+                    data-tip={t.tip} data-tip-side="bottom"
+                    onClick={() => chooseVoteModel(t.key)} class="rounded-xl border p-3 text-left transition-colors"
                     style={`border-color:${active ? "var(--color-brand)" : "var(--color-line)"}; background:${active ? "var(--color-brand-tint)" : "transparent"}`}>
                     <span class="flex items-center gap-2 text-sm font-semibold">
                       <span class="grid h-3.5 w-3.5 place-items-center rounded-full border" style={`border-color:${active ? "var(--color-brand)" : "var(--color-ink-faint)"}`}>
@@ -494,10 +489,10 @@ export default function CreatePoll() {
             </button>
             {showCompare && (
               <div class="mt-2 grid gap-2.5">
-                {PRIVACY_DETAILS.map((d) => (
+                {VOTE_MODEL_DETAILS.map((d) => (
                   <div class="rounded-xl border p-3" style="border-color: var(--color-line); background: var(--color-paper-2)">
                     <p class="text-xs font-bold uppercase tracking-wide text-[var(--color-ink-soft)]">
-                      {PRIVACY_OPTIONS.find((o) => o.key === d.key)!.title}
+                      {VOTE_MODELS.find((o) => o.key === d.key)!.title}
                     </p>
                     <ul class="mt-1.5 space-y-1">
                       {d.pros.map((p) => (
@@ -511,14 +506,14 @@ export default function CreatePoll() {
               </div>
             )}
 
-            {privacy === "public" && (
+            {voteModel === "verified" && (
               <p class="mt-3 flex items-start gap-1.5 rounded-xl bg-amber-50 px-3 py-2 text-xs leading-snug text-amber-800">
                 <span aria-hidden="true">⚗️</span>
-                <span>Public (on-network) polling is in <strong>alpha</strong> — it writes new records to your Bluesky account and the format may still change.</span>
+                <span>Verified (on-network) polling is in <strong>alpha</strong> — it writes new records to your Bluesky account and the format may still change.</span>
               </p>
             )}
 
-            {privacy === "public" && (
+            {voteModel === "verified" && (
               <>
                 <label class="mt-5 flex cursor-pointer items-start gap-2.5">
                   <input type="checkbox" class="mt-0.5" checked={sealedMode} onChange={(e) => chooseResults((e.target as HTMLInputElement).checked ? "sealed" : "live")} />
@@ -574,22 +569,36 @@ export default function CreatePoll() {
         )}
         back={() => (
           <>
-            <h2 class="text-2xl">What this writes</h2>
-            <p class="mt-2 text-sm text-[var(--color-ink-soft)]">Where your poll and its votes live on the network.</p>
-            <div class="mt-4 space-y-2 text-sm text-[var(--color-ink-soft)] tech-details !border-t-0">
-              {recording === "network" ? (
-                <>
-                  <p>A <code>blue.poll.poll.poll</code> record in your repo{!sealedMode ? <> + a <code>blue.poll.poll.option</code> per option</> : null}, plus an <code>app.bsky.feed.post</code>{images.length ? " with images" : ""}.</p>
-                  <p>Each vote → a <code>blue.poll.poll.vote</code> in the voter's own repo.</p>
-                  <p>Tally: {sealedMode ? "drand timelock — encrypted until close." : "Constellation backlink counts."}</p>
-                </>
-              ) : (
-                <>
-                  <p>Posts an <code>app.bsky.feed.post</code> and registers the poll in poll.blue's central database (votes counted there — one per person, by IP).</p>
-                  <p>Also writes a <code>blue.poll.poll.poll</code> record (mode <code>centralized</code>) to your repo so the poll appears in <a class="text-[var(--color-brand-deep)] hover:underline" href="/mine">My Polls</a>, where you can delete it.</p>
-                </>
-              )}
-              <p>Every <code>blue.poll.*</code> record is stamped <code>spec: {POLL_SPEC}</code>.</p>
+            <h2 class="text-2xl">How it works</h2>
+            <p class="mt-2 text-sm text-[var(--color-ink-soft)]">Both vote models, in full — your current pick is highlighted.</p>
+
+            <div class="tech-details !border-t-0 mt-4 space-y-3">
+              <div class="rounded-xl border p-3.5" style={`border-color:${voteModel === "verified" ? "var(--color-brand)" : "var(--color-line)"}; background:${voteModel === "verified" ? "var(--color-brand-tint)" : "transparent"}`}>
+                <h3 class="flex items-center gap-2 text-sm font-bold">
+                  <span class="text-base leading-none">🛡️</span> Verified <AlphaTag />
+                  {voteModel === "verified" && <span class="ml-auto rounded-full bg-[var(--color-brand)] px-1.5 py-0.5 text-[0.55rem] font-extrabold uppercase tracking-wide text-white">Picked</span>}
+                </h3>
+                <ul class="mt-2 space-y-1.5 text-xs leading-relaxed text-[var(--color-ink-soft)]">
+                  <li>Writes a <code>blue.poll.poll.poll</code> record + one <code>blue.poll.poll.option</code> per option to your repo, plus the <code>app.bsky.feed.post</code>. Addressed by <code>did~rkey</code>.</li>
+                  <li>Each vote is a <code>blue.poll.poll.vote</code> record in the <em>voter's own</em> repo, pointing at the chosen option's at-uri.</li>
+                  <li>The tally is a live count of those vote backlinks (via Constellation) — no server holds the number, so anyone can recount it independently.</li>
+                  <li><strong>Secret ballot</strong> adds drand timelock encryption: choices are unreadable — even to poll.blue — until the close time, then revealed and tallied.</li>
+                </ul>
+              </div>
+
+              <div class="rounded-xl border p-3.5" style={`border-color:${voteModel === "anonymous" ? "var(--color-brand)" : "var(--color-line)"}; background:${voteModel === "anonymous" ? "var(--color-brand-tint)" : "transparent"}`}>
+                <h3 class="flex items-center gap-2 text-sm font-bold">
+                  <span class="text-base leading-none">🕶️</span> Anonymous
+                  {voteModel === "anonymous" && <span class="ml-auto rounded-full bg-[var(--color-brand)] px-1.5 py-0.5 text-[0.55rem] font-extrabold uppercase tracking-wide text-white">Picked</span>}
+                </h3>
+                <ul class="mt-2 space-y-1.5 text-xs leading-relaxed text-[var(--color-ink-soft)]">
+                  <li>Writes one <code>blue.poll.poll.poll</code> record (mode <code>centralized</code>) to your repo, plus the <code>app.bsky.feed.post</code>. Addressed by <code>did~rkey</code> like a verified poll — but with no per-option records.</li>
+                  <li>Voting is an anonymous link tap; poll.blue counts it in its database, keyed to the poll's at-uri, deduped one-per-person by IP (best-effort). No per-voter record exists.</li>
+                  <li>No on-network vote records and no Constellation — the count lives only in poll.blue, so it can't be independently verified.</li>
+                </ul>
+              </div>
+
+              <p class="text-xs text-[var(--color-ink-faint)]">Every <code>blue.poll.*</code> record is stamped <code>spec: {POLL_SPEC}</code>. Manage or delete polls from <a class="text-[var(--color-brand-deep)] hover:underline" href="/mine">My Polls</a>.</p>
             </div>
           </>
         )}
