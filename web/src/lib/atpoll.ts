@@ -189,23 +189,26 @@ export async function createPrivatePoll(
 }
 
 /** Count votes for a unified private poll from poll.blue's API (keyed by the
- *  poll's at-uri, server-side). Returns a per-option count array. */
-export async function fetchCentralTally(id: string, optionCount: number): Promise<number[]> {
+ *  poll's at-uri, server-side). Returns per-option counts + which option *this*
+ *  browser voted for, if any (`youVoted`, 1-based; 0 = hasn't voted). */
+export async function fetchCentralTally(id: string, optionCount: number): Promise<{ counts: number[]; youVoted: number }> {
   const counts = new Array(optionCount).fill(0) as number[];
+  let youVoted = 0;
   try {
     const r = await fetch(`/api/poll/${encodeURIComponent(id)}`);
-    if (!r.ok) return counts;
-    const j = (await r.json()) as { tallies?: Record<string, number> };
+    if (!r.ok) return { counts, youVoted };
+    const j = (await r.json()) as { tallies?: Record<string, number>; youVoted?: number };
     for (const [k, v] of Object.entries(j.tallies ?? {})) {
       const idx = parseInt(k, 10) - 1;
       if (idx >= 0 && idx < optionCount) counts[idx] = v;
     }
+    if (typeof j.youVoted === "number") youVoted = j.youVoted;
   } catch { /* keep zeros */ }
-  return counts;
+  return { counts, youVoted };
 }
 
-/** Cast an anonymous vote on a unified private poll via poll.blue's API (one per
- *  IP, no sign-in). Same-origin POST so link crawlers can't vote. */
+/** Cast (or change) an anonymous vote on a unified private poll via poll.blue's
+ *  API (one per IP, no sign-in). Same-origin POST so link crawlers can't vote. */
 export async function castCentralVote(id: string, option: number): Promise<void> {
   const r = await fetch(`/api/poll/${encodeURIComponent(id)}/vote`, {
     method: "POST",
@@ -215,6 +218,19 @@ export async function castCentralVote(id: string, option: number): Promise<void>
   if (!r.ok) {
     const j = await r.json().catch(() => ({}));
     throw new Error(typeof j.error === "string" ? j.error : "Could not record your vote.");
+  }
+}
+
+/** Remove this browser's anonymous vote on a unified private poll (vote: 0). */
+export async function removeCentralVote(id: string): Promise<void> {
+  const r = await fetch(`/api/poll/${encodeURIComponent(id)}/vote`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ vote: 0 }),
+  });
+  if (!r.ok) {
+    const j = await r.json().catch(() => ({}));
+    throw new Error(typeof j.error === "string" ? j.error : "Could not remove your vote.");
   }
 }
 

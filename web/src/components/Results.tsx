@@ -18,6 +18,7 @@ import {
   pollOptionTexts,
   pollOptionUris,
   type Profile,
+  removeCentralVote,
   resolveProfiles,
   sealedVoteCount,
   setPendingVote,
@@ -189,8 +190,9 @@ export default function Results() {
           if (rec.value.mode === "centralized") {
             // Unified private poll (no visibleId): DB-tallied by at-uri, anonymous
             // link voting. Question/options come from the record above.
-            const counts = await fetchCentralTally(id, answers.length);
+            const { counts, youVoted } = await fetchCentralTally(id, answers.length);
             setData({ ...base, isPublic: false, central: true, mode: "centralized", results: [0, ...counts] });
+            if (youVoted && voteIntent <= 0) { interactedRef.current = true; setMyVote(youVoted); }
             return;
           }
 
@@ -255,7 +257,7 @@ export default function Results() {
     const tick = async () => {
       try {
         if (data.central) {
-          const counts = await fetchCentralTally(id, data.answers.length);
+          const { counts } = await fetchCentralTally(id, data.answers.length);
           setData((d) => (d ? { ...d, results: [0, ...counts] } : d));
           return;
         }
@@ -276,6 +278,7 @@ export default function Results() {
         }
       } catch { /* keep last good tally */ }
     };
+    tick(); // run immediately so an existing vote shows checked on load (no 5s wait)
     const iv = setInterval(tick, REFRESH_MS);
     const onVis = () => { if (document.visibilityState === "visible") tick(); };
     document.addEventListener("visibilitychange", onVis);
@@ -334,9 +337,9 @@ export default function Results() {
     if (isClosed(data)) return setCastError("This poll has closed.");
     if (!ready) return;
     setCastError("");
-    // Private poll: anonymous API vote, one per person (can't change or unvote).
+    // Private poll: anonymous API vote. Tapping your current choice removes it.
     if (data.central) {
-      if (myVote > 0) return;
+      if (n === myVote) return void removeCentralVoteFlow();
       return void performCentralVote(n);
     }
     // Tapping the option you already picked unchecks it — i.e. removes your vote.
@@ -357,21 +360,43 @@ export default function Results() {
     else performVote(n);
   }
 
-  // Anonymous vote on a private poll via poll.blue's API (no sign-in).
+  // Anonymous vote (or change) on a private poll via poll.blue's API (no sign-in).
   async function performCentralVote(n: number) {
     if (!data) return;
+    const prev = myVote;
     interactedRef.current = true;
     setMyVote(n); // optimistic
     try {
       await castCentralVote(id, n);
-      setVoteCast(true);
       setCastFlash(true);
       setTimeout(() => setCastFlash(false), 550);
-      const counts = await fetchCentralTally(id, data.answers.length);
+      // Reconcile to the server's truth: on a shared IP the vote may be deduped
+      // (youVoted stays 0), in which case the option honestly un-checks.
+      const { counts, youVoted } = await fetchCentralTally(id, data.answers.length);
+      setData((d) => (d ? { ...d, results: [0, ...counts] } : d));
+      setMyVote(youVoted);
+      setVoteCast(youVoted > 0);
+    } catch (e) {
+      setMyVote(prev);
+      setCastError((e as Error).message || "Could not record your vote.");
+    }
+  }
+
+  // Remove this browser's anonymous vote on a private poll.
+  async function removeCentralVoteFlow() {
+    if (!data || !myVote) return;
+    const prev = myVote;
+    interactedRef.current = true;
+    setMyVote(0);
+    setVoteCast(false);
+    setCastError("");
+    try {
+      await removeCentralVote(id);
+      const { counts } = await fetchCentralTally(id, data.answers.length);
       setData((d) => (d ? { ...d, results: [0, ...counts] } : d));
     } catch (e) {
-      setMyVote(0);
-      setCastError((e as Error).message || "Could not record your vote.");
+      setMyVote(prev);
+      setCastError((e as Error).message || "Could not remove your vote.");
     }
   }
 
@@ -502,9 +527,7 @@ export default function Results() {
   const sealed = d.mode === "sealed";
   const sealedOpen = sealed && !closed;
   const ineligible = !!d.audience && myEligible === false;
-  // Private polls allow one vote per person (no change/unvote); network polls can
-  // switch or remove their vote any time.
-  const canVote = (d.isPublic || d.central) && !closed && !ineligible && (d.central ? myVote === 0 : true);
+  const canVote = (d.isPublic || d.central) && !closed && !ineligible;
   const showLoginBanner = publicPoll && needLogin && !voteCast;
   const pdslsUrl = d.pollUri ? `https://pdsls.dev/${d.pollUri}` : undefined;
   const votePath = sealed || d.optionUris?.some(Boolean) ? "blue.poll.poll.vote:poll.uri" : "blue.poll.poll.vote:subject.uri";
@@ -560,8 +583,15 @@ export default function Results() {
           </p>
         )}
 
-        {canVote && !voteCast && (
+        {canVote && myVote === 0 && !voteCast && (
           <p class="mt-4 text-sm font-medium text-[var(--color-brand-deep)]">{sealed ? "Tap an option to seal your vote →" : "Tap an option to vote →"}</p>
+        )}
+        {canVote && myVote > 0 && !voteCast && (
+          <p class="mt-4 text-sm font-medium text-[var(--color-brand-deep)]">
+            {sealed
+              ? "🔒 Your sealed vote is in — tap another option before close to change it."
+              : <>✓ You voted for <span class="font-bold">"{d.answers[myVote - 1]}"</span> — tap another to change it, or the same one to remove it.</>}
+          </p>
         )}
 
         {showLoginBanner && (
@@ -590,7 +620,7 @@ export default function Results() {
         {voteCast && (
           <p class="mt-6 rounded-xl px-4 py-2.5 text-sm font-medium" style="background: var(--color-brand-tint); color: var(--color-brand-deep)">
             {d.central
-              ? "Vote counted ✓ — anonymous, one per person. Thanks!"
+              ? "Vote counted ✓ — anonymous. Tap another option to change it, or the same one again to remove it."
               : sealed
                 ? "Your vote is sealed 🔒 — it stays encrypted until the poll closes, then reveals with everyone else's. Tap another option to change it, or tap the same one again to withdraw."
                 : "Vote recorded to your account ✓ — tap another option to change it, or tap the same one again to remove it."}

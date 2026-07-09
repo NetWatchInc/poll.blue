@@ -85,7 +85,6 @@ export default function CreatePoll() {
   const [body, setBody] = useState("");
   const [options, setOptions] = useState(["", "", ""]);
   const [images, setImages] = useState<Img[]>([]);
-  const [showImages, setShowImages] = useState(false);
   const [replyTo, setReplyTo] = useState("");
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [showCompare, setShowCompare] = useState(false);
@@ -283,7 +282,7 @@ export default function CreatePoll() {
   function reset() {
     setResult(null); setBody(""); setOptions(["", "", ""]); setReplyTo("");
     images.forEach((im) => URL.revokeObjectURL(im.url));
-    setImages([]); setShowImages(false); setResults("live"); setDuration("none"); setGate("none"); setListUri("");
+    setImages([]); setResults("live"); setDuration("none"); setGate("none"); setListUri("");
   }
 
   /* ---------- render ---------- */
@@ -380,62 +379,54 @@ export default function CreatePoll() {
             </button>
           )}
           <p class="mt-3 px-1 text-sm font-semibold text-[var(--color-brand-deep)]">📊 Show results</p>
-        </div>
 
-        {/* Photos, tucked into a drawer — most polls don't need one. */}
-        <div class="mt-3">
-          <button type="button" onClick={() => setShowImages((v) => !v)} aria-expanded={showImages}
-            class="inline-flex items-center gap-2 rounded-full border-2 px-4 py-2 text-sm font-bold text-[var(--color-ink-soft)] transition-colors hover:border-[var(--color-brand)] hover:text-[var(--color-brand-deep)]"
-            style={`border-color:${showImages || images.length ? "var(--color-brand)" : "var(--color-line)"}; background:${showImages || images.length ? "var(--color-brand-tint)" : "transparent"}`}>
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-              <rect x="3" y="5" width="18" height="14" rx="2.5" stroke="currentColor" stroke-width="1.8" />
-              <circle cx="8.5" cy="10" r="1.6" stroke="currentColor" stroke-width="1.8" />
-              <path d="M4 17l4.5-4.5 4 4L16 13l4 4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" />
-            </svg>
-            Photos
-            {images.length > 0 && (
-              <span class="grid h-4 min-w-4 place-items-center rounded-full bg-[var(--color-brand)] px-1 text-[0.65rem] font-bold text-white">{images.length}</span>
-            )}
-            <span class="text-[var(--color-ink-faint)]">{showImages ? "▲" : "▾"}</span>
-          </button>
-
-          {showImages && (
-            <div class="mt-3 flex flex-wrap gap-3 rounded-2xl border p-3.5" style="border-color: var(--color-line); background: linear-gradient(180deg,#ffffff,#f5f9fe)">
+          {/* Photos render as part of the post preview, right in the canvas. */}
+          {images.length > 0 && (
+            <div class="mt-3 flex flex-wrap gap-2.5 px-1">
               {images.map((im, i) => (
-                <div class="w-24">
+                <div class="w-[4.5rem]">
                   <div class="relative">
-                    <img src={im.url} alt="" class="h-24 w-24 rounded-xl object-cover" style="box-shadow: var(--shadow-cloud)" />
+                    <img src={im.url} alt="" class="h-[4.5rem] w-[4.5rem] rounded-lg object-cover" style="box-shadow: var(--shadow-cloud)" />
                     <button type="button" onClick={() => removeImage(i)} aria-label="Remove image"
-                      class="absolute -right-2 -top-2 grid h-6 w-6 place-items-center rounded-full bg-white text-red-600 shadow">✕</button>
+                      class="hit absolute -right-1.5 -top-1.5 grid h-5 w-5 place-items-center rounded-full bg-white text-xs text-red-600 shadow">✕</button>
                   </div>
-                  <input class="field mt-1.5 !rounded-lg !py-1 text-xs" placeholder="alt text" value={im.alt}
-                    onInput={(e) => updateAlt(i, (e.target as HTMLInputElement).value)} />
+                  <input class="mt-1 w-full rounded bg-[var(--color-paper-2)] px-1.5 py-0.5 text-[0.65rem] outline-none placeholder:text-[var(--color-ink-faint)]"
+                    placeholder="alt" value={im.alt} onInput={(e) => updateAlt(i, (e.target as HTMLInputElement).value)} />
                 </div>
               ))}
-              {images.length < MAX_IMAGES && (
-                <label class="grid h-24 w-24 cursor-pointer place-items-center rounded-xl border-2 border-dashed text-2xl text-[var(--color-ink-faint)] transition-colors hover:border-[var(--color-brand)] hover:text-[var(--color-brand-deep)]" style="border-color: var(--color-line)">
-                  +
-                  <input type="file" accept="image/*" multiple class="hidden" onChange={(e) => { addImages((e.target as HTMLInputElement).files); (e.target as HTMLInputElement).value = ""; }} />
-                </label>
-              )}
-              {images.length === 0 && (
-                <p class="grid h-24 flex-1 place-items-center px-2 text-center text-sm text-[var(--color-ink-faint)]">Add up to {MAX_IMAGES} — optional, but nice for context.</p>
-              )}
             </div>
           )}
+
+          {/* Composer toolbar — media lives inside the canvas, not on its own row. */}
+          <div class="mt-3 flex items-center gap-2 border-t pt-2.5" style="border-color: rgba(120,160,210,0.3)">
+            {images.length < MAX_IMAGES && (
+              <label class="grid h-9 w-9 cursor-pointer place-items-center rounded-lg text-[var(--color-ink-soft)] transition-colors hover:bg-[var(--color-paper-2)] hover:text-[var(--color-brand-deep)]" title="Add a photo" aria-label="Add a photo">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                  <rect x="3" y="5" width="18" height="14" rx="2.5" stroke="currentColor" stroke-width="1.8" />
+                  <circle cx="8.5" cy="10" r="1.6" stroke="currentColor" stroke-width="1.8" />
+                  <path d="M4 17l4.5-4.5 4 4L16 13l4 4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" />
+                </svg>
+                <input type="file" accept="image/*" multiple class="hidden" onChange={(e) => { addImages((e.target as HTMLInputElement).files); (e.target as HTMLInputElement).value = ""; }} />
+              </label>
+            )}
+            <span class="text-xs text-[var(--color-ink-faint)]">
+              {images.length > 0 ? `${images.length}/${MAX_IMAGES} photo${images.length > 1 ? "s" : ""}` : "Add a photo (optional)"}
+            </span>
+          </div>
         </div>
 
         {/* The important warning at post time is *visibility*: will voters' votes
-            be public or private? A molded placard, styled to match the page. */}
-        <div class={`mode-plate mt-6 flex flex-wrap items-center gap-x-2.5 gap-y-1 px-3.5 py-2.5 text-sm ${voteModel === "verified" ? "mode-plate--public" : "mode-plate--private"}`}>
+            be public or private? The whole molded placard is a toggle. */}
+        <button type="button" aria-pressed={voteModel === "verified"}
+          onClick={() => chooseVoteModel(voteModel === "verified" ? "anonymous" : "verified")}
+          class={`mode-plate mode-toggle mt-6 flex w-full flex-wrap items-center gap-x-2.5 gap-y-1 px-3.5 py-2.5 text-left text-sm ${voteModel === "verified" ? "mode-plate--public" : "mode-plate--private"}`}>
           <span class="mode-emblem" aria-hidden="true">{voteModel === "verified" ? "👁️" : "🕶️"}</span>
           <span class="font-extrabold uppercase tracking-wide">{voteModel === "verified" ? "Public votes" : "Private votes"}</span>
           <span class="opacity-80">— {voteModel === "verified" ? "everyone can see how each person voted" : "no one can see who voted for what"}.</span>
-          <button type="button" class="ml-auto font-bold underline underline-offset-2 hover:no-underline"
-            onClick={() => chooseVoteModel(voteModel === "verified" ? "anonymous" : "verified")}>
-            Make it {voteModel === "verified" ? "private" : "public"}
-          </button>
-        </div>
+          <span class="ml-auto inline-flex items-center gap-1.5 whitespace-nowrap font-bold">
+            <span aria-hidden="true">⇄</span> tap to switch
+          </span>
+        </button>
 
         <div class="mt-5 flex items-center gap-4">
           <button class="btn btn-primary !px-8 !py-3.5 text-base" disabled={!canPost || busy} onClick={post}>

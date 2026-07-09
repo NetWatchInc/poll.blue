@@ -1,4 +1,5 @@
 import type { Context } from "hono";
+import { getCookie } from "hono/cookie";
 import { query } from "../db.ts";
 import { isPublicId, pollUriFromId } from "../poll-id.ts";
 
@@ -18,7 +19,10 @@ export async function getResults(c: Context) {
     );
     const tallies: Record<string, number> = {};
     for (const row of r.rows) tallies[String(row.vote)] = row.n;
-    return c.json({ central: true, tallies });
+    // If this browser has voted, tell it which option (so it shows as checked).
+    const cookie = getCookie(c, `pb_voted_${id}`);
+    const youVoted = cookie ? parseInt(cookie, 10) || 0 : 0;
+    return c.json({ central: true, tallies, youVoted });
   }
 
   const r = await query(
